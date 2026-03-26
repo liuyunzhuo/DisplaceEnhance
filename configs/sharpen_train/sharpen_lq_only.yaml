@@ -1,0 +1,80 @@
+name: "sharpen_lq_only"
+seed: 42
+model_type: "ImageRestorationModel"
+
+datasets:
+  train:
+    name: "train_lq_only"
+    type: "PairedImageDataset"
+    mode: "lq_only"
+    dataroot_lq: "data/train/inputs"
+    batch_size_per_gpu: 8
+    num_worker_per_gpu: 4
+    pipeline:
+      - name: "crop"
+        params: { size: 256, random: true }
+      - name: "ops"
+        params:
+          gt_op:
+            enable: true
+            steps:
+              - name: "sharpen"
+                params: { radius: 2.0, amount: 1.5, threshold: 3 }
+      - name: "to_tensor"
+      - name: "augment"
+        params:
+          flip: true
+          rot: true
+  val:
+    name: "val_lq_only"
+    type: "PairedImageDataset"
+    mode: "lq_only"
+    dataroot_lq: "data/val/inputs"
+    batch_size_per_gpu: 4
+    num_worker_per_gpu: 2
+    pipeline:
+      - name: "crop"
+        params: { size: 256, random: false }
+      - name: "ops"
+        params:
+          gt_op:
+            enable: true
+            steps:
+              - name: "sharpen"
+                params: { radius: 2.0, amount: 1.5, threshold: 3 }
+      - name: "to_tensor"
+
+network:
+  type: "SharpenNet"
+  in_channels: 3
+  out_channels: 3
+  base_channels: 32
+
+path:
+  experiments_root: "experiments"
+  resume_state: null
+  strict_load_model: true
+
+train:
+  total_iter: 50000
+  optimizer:
+    type: "Adam"
+    lr: 1.0e-4
+    betas: [0.9, 0.99]
+    weight_decay: 0.0
+  scheduler:
+    type: "CosineAnnealingLR"
+    T_max: 50
+  loss:
+    type: "L1"
+    mode: "bt601_luma"
+  grad_clip: 1.0
+  val_freq: 1000
+  save_checkpoint_freq: 5000
+
+val:
+  save_img: true
+
+logger:
+  print_freq: 100
+  use_tb_logger: true

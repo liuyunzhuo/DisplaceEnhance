@@ -1,0 +1,50 @@
+seed: 1234
+
+dataset:
+  mode: single
+
+  source:
+    root: "data/train/desktop_yuv420"
+    glob: "*.yuv"
+    decoder:
+      type: raw_yuv
+      infer_from_filename: true
+      # Matches names like:
+      # 0456_TR_1920x1078_420p.yuv
+      # 0001_TR_1920x1080_420p.yuv
+      filename_pattern: "(?P<width>\\d+)x(?P<height>\\d+)_(?P<pixel_format>420p|444p)"
+
+  branches:
+    lq:
+      enabled: true
+      pipeline:
+        - name: "yuv420_to_yuv444_nn"
+        - name: "yuv444_to_rgb"
+          params:
+            matrix: "bt709"
+            range: "limited"
+
+patching:
+  mode: grid_full
+  size: 256
+  stride: 256
+
+packing:
+  output_root: "data/train_desktop_identity_lmdb"
+  show_progress: true
+  # Optional project-side meta index for training selection.
+  # meta_info_out:
+  #   lq: "datasets/train/desktop_identity/lq/meta_info.txt"
+  outputs:
+    lq:
+      enabled: true
+      pipeline:
+        - name: "store_rgb_png"
+          params:
+            png_compress_level: 3
+        - name: "write_lmdb"
+          params:
+            lmdb_name: "lq.lmdb"
+            map_size_gb: 0.25
+            write_batch_size: 512
+            compact: true

@@ -1,0 +1,87 @@
+name: "sharpen_paired_lmdb_desktop_lq_only_mix"
+seed: 42
+model_type: "ImageRestorationModel"
+
+datasets:
+  train:
+    batch_size_per_gpu: 8
+    num_worker_per_gpu: 4
+    datasets:
+      - name: "train_main_lmdb"
+        type: "PairedLmdbDataset"
+        mode: "paired"
+        dataroot_lq: "data/train/lq.lmdb"
+        dataroot_gt: "data/train/gt.lmdb"
+        meta_info: "meta_info.txt"
+        repeat: 1
+        pipeline:
+          - name: "crop"
+            params: { size: 256, random: true }
+          - name: "to_tensor"
+          - name: "augment"
+            params: { flip: true, rot: true }
+
+      - name: "train_desktop_lq_only"
+        type: "PairedLmdbDataset"
+        mode: "lq_only"
+        dataroot_lq: "data/train_desktop_identity_lmdb/lq.lmdb"
+        meta_info: "meta_info.txt"
+        repeat: 2
+        pipeline:
+          - name: "crop"
+            params: { size: 256, random: true }
+          - name: "ops"
+            params:
+              gt_op:
+                enable: true
+                steps:
+                  - name: "identity"
+          - name: "to_tensor"
+          - name: "augment"
+            params: { flip: true, rot: true }
+
+  val:
+    name: "val_paired"
+    type: "PairedImageDataset"
+    mode: "paired"
+    dataroot_lq: "data/val/inputs"
+    dataroot_gt: "data/val/targets"
+    batch_size_per_gpu: 1
+    num_worker_per_gpu: 2
+    pipeline:
+      - name: "to_tensor"
+
+network:
+  type: "SharpenNet"
+  in_channels: 3
+  out_channels: 3
+  base_channels: 32
+
+path:
+  experiments_root: "experiments"
+  resume_state: null
+  strict_load_model: true
+
+train:
+  total_iter: 50000
+  optimizer:
+    type: "Adam"
+    lr: 1.0e-4
+    betas: [0.9, 0.99]
+    weight_decay: 0.0
+  scheduler:
+    type: "CosineAnnealingLR"
+    T_max: 50
+  loss:
+    type: "L1"
+    mode: "bt601_luma"
+  grad_clip: 1.0
+  val_freq: 1000
+  save_checkpoint_freq: 5000
+
+val:
+  save_img: true
+
+logger:
+  print_freq: 100
+  use_tb_logger: true

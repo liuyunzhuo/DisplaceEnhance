@@ -1,0 +1,39 @@
+粉底绿字
+#90D050 rgb=(144, 208, 80) count=5151 ratio=3.38%
+#FF00FF rgb=(255, 0, 255) count=5054 ratio=3.31%
+
+紫底绿字
+#90D050 rgb=(144, 208, 80) count=5151 ratio=3.38%
+#7030A0 rgb=(112, 48, 160) count=10458 ratio=6.85%
+
+灰底绿字
+#90D050 rgb=(144, 208, 80) count=5151 ratio=3.38%
+#A8A8A8 rgb=(168, 168, 168) count=5313 ratio=3.48%
+
+橙底绿字
+#90D050 rgb=(144, 208, 80) count=5151 ratio=3.38%
+#F08030 rgb=(240, 128, 48) count=5048 ratio=3.31%
+
+橙底蓝字
+#00B0F0 rgb=(0, 176, 240) count=5435 ratio=3.56%
+#F08030 rgb=(240, 128, 48) count=5048 ratio=3.31%
+
+红底绿色
+#90D050 rgb=(144, 208, 80) count=5151 ratio=3.38%
+#C00000 rgb=(192, 0, 0) count=5437 ratio=3.56%
+
+红底绿字
+#90D050 rgb=(144, 208, 80) count=5151 ratio=3.38%
+#FF0000 rgb=(255, 0, 0) count=5404 ratio=3.54%
+
+粉底黑字
+#000000 rgb=(0, 0, 0) count=5710 ratio=3.74%
+#FF00FF rgb=(255, 0, 255) count=5054 ratio=3.31%
+
+红底黑字
+#000000 rgb=(0, 0, 0) count=5710 ratio=3.74%
+#FF0000 rgb=(255, 0, 0) count=5404 ratio=3.54%
+
+红底黑字
+#000000 rgb=(0, 0, 0) count=5710 ratio=3.74%
+#C00000 rgb=(192, 0, 0) count=5437 ratio=3.56%
