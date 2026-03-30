@@ -1,3 +1,4 @@
-from .sharpen_net import SharpenNet
+from .sharpen import SharpenNet
+from .uvsr import UVSR_Unet
 
-__all__ = ["SharpenNet"]
+__all__ = ["SharpenNet", "UVSR_Unet"]

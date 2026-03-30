@@ -46,7 +46,7 @@ class SharpenNet(nn.Module):
         feat = self.head(y)
         feat = self.body(feat)
         out = self.tail(feat)
-        # residual learning on Y only
+        # Residual learning on the luminance channel keeps UV untouched.
         y_out = torch.clamp(y + out, 0.0, 1.0)
 
         # YUV -> RGB
