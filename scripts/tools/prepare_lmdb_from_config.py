@@ -5,6 +5,7 @@ import io
 import random
 import re
 import shutil
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -13,6 +14,12 @@ import lmdb
 import numpy as np
 import yaml
 from PIL import Image
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.utils.color import rgb_to_yuv444_product, yuv444_to_rgb_product
 
 try:
     from tqdm import tqdm
@@ -293,9 +300,20 @@ def _clip_uint8(array: np.ndarray) -> np.ndarray:
     return np.clip(np.round(array), 0, 255).astype(np.uint8)
 
 
+def _use_internal_product_formula(params: Dict[str, Any]) -> bool:
+    matrix = str(params.get("matrix", "")).lower()
+    converter = str(params.get("converter", "")).lower()
+    return matrix in ("internal_product", "product") or converter in ("internal_product", "product")
+
+
 def _rgb_to_yuv444(frame: Frame, params: Dict[str, Any]) -> Frame:
     if frame.color_space != "rgb":
         raise SystemExit("rgb_to_yuv444 requires an RGB frame.")
+    if _use_internal_product_formula(params):
+        y_plane, u_plane, v_plane = rgb_to_yuv444_product(frame.data)
+        data = np.stack([y_plane, u_plane, v_plane], axis=2)
+        return Frame(color_space="yuv444", data=data, width=frame.width, height=frame.height)
+
     matrix = params.get("matrix", "bt601")
     value_range = params.get("range", "full").lower()
     kr, kg, kb = _matrix_coefficients(matrix)
@@ -326,6 +344,10 @@ def _rgb_to_yuv444(frame: Frame, params: Dict[str, Any]) -> Frame:
 def _yuv444_to_rgb(frame: Frame, params: Dict[str, Any]) -> Frame:
     if frame.color_space != "yuv444":
         raise SystemExit("yuv444_to_rgb requires a YUV444 frame.")
+    if _use_internal_product_formula(params):
+        rgb = yuv444_to_rgb_product(frame.data)
+        return Frame(color_space="rgb", data=rgb, width=frame.width, height=frame.height)
+
     matrix = params.get("matrix", "bt601")
     value_range = params.get("range", "full").lower()
     kr, kg, kb = _matrix_coefficients(matrix)

@@ -168,6 +168,9 @@ The config-driven prep tool supports:
 - patch generation via `patching.mode: none | grid | grid_full | random`
 - raw YUV width, height, and pixel format can be inferred from filenames
 
+For `yuv444_to_rgb` and `rgb_to_yuv444`, `matrix` can be `bt601`, `bt709`, or `internal_product`.
+`internal_product` uses the project-specific full-range product conversion formula and ignores `range`.
+
 `grid_full` works like grid cropping, but also adds the last row and last column patches so edge areas are not dropped when the image size is not divisible by stride.
 It does not pad or fill missing pixels with zeros. Instead, it moves the final patch start position back to `width - size` or `height - size`, so the border area is covered by overlapping crops taken entirely from the original image.
 
@@ -244,6 +247,14 @@ val:
         params:
           matrix: "bt709"
           value_range: "limited"
+```
+
+If your packed YUV444 data uses the internal product conversion instead of standard BT.601 / BT.709, use:
+
+```yaml
+      - name: "packed_yuv444_to_rgb"
+        params:
+          matrix: "internal_product"
 ```
 
 If no visualization pipeline is provided, validation image saving keeps the packed channel layout instead of guessing how to convert it back to RGB.
