@@ -10,6 +10,7 @@ datasets:
       - name: "train_main_lmdb"
         type: "PairedLmdbDataset"
         mode: "paired"
+        loss_weight: 1.0
         dataroot_lq: "data/train/lq.lmdb"
         dataroot_gt: "data/train/gt.lmdb"
         meta_info: "meta_info.txt"
@@ -24,6 +25,7 @@ datasets:
       - name: "train_desktop_lq_only"
         type: "PairedLmdbDataset"
         mode: "lq_only"
+        loss_weight: 0.1
         dataroot_lq: "data/train_desktop_identity_lmdb/lq.lmdb"
         meta_info: "meta_info.txt"
         repeat: 2

@@ -41,6 +41,7 @@ class ImageRestorationModel:
 
         loss_opt = train_opt.get("loss", {})
         loss_type = loss_opt.get("type", "L1")
+        self.loss_type = loss_type
         if loss_type == "L1":
             self.pixel_loss = nn.L1Loss()
         elif loss_type == "MSE":
@@ -55,21 +56,49 @@ class ImageRestorationModel:
         self.lq: torch.Tensor | None = None
         self.gt: torch.Tensor | None = None
         self.prediction: torch.Tensor | None = None
+        self.sample_weight: torch.Tensor | None = None
 
     def feed_data(self, data: Dict[str, torch.Tensor]) -> None:
         self.lq = data["lq"].to(self.device)
         self.gt = data["gt"].to(self.device)
+        sample_weight = data.get("loss_weight")
+        if sample_weight is None:
+            batch = self.lq.size(0)
+            self.sample_weight = torch.ones(batch, device=self.device, dtype=self.lq.dtype)
+        else:
+            self.sample_weight = torch.as_tensor(sample_weight, device=self.device, dtype=self.lq.dtype).flatten()
+
+    def _pixel_difference(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        if self.loss_type == "L1":
+            return torch.abs(pred - target)
+        if self.loss_type == "MSE":
+            return (pred - target) ** 2
+        raise ValueError(f"Unsupported loss.type: {self.loss_type}")
+
+    def _weighted_mean(self, values: torch.Tensor) -> torch.Tensor:
+        if values.dim() == 0:
+            return values
+        if self.sample_weight is None:
+            return values.mean()
+        weights = self.sample_weight.to(device=values.device, dtype=values.dtype)
+        if weights.numel() != values.size(0):
+            raise ValueError("loss_weight batch size mismatch")
+        weight_sum = weights.sum().clamp_min(torch.finfo(values.dtype).eps)
+        return (values * weights).sum() / weight_sum
 
     def _compute_pixel_loss(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         if self.loss_mode in ("all_channels", "direct"):
+            diff = self._pixel_difference(pred, target)
             if self.channel_weights:
                 weights = torch.tensor(self.channel_weights, device=pred.device, dtype=pred.dtype).view(1, -1, 1, 1)
-                diff = torch.abs(pred - target) * weights
-                return diff.mean()
-            return self.pixel_loss(pred, target)
+                diff = diff * weights
+            per_sample = diff.mean(dim=(1, 2, 3))
+            return self._weighted_mean(per_sample)
 
         if self.loss_mode in ("bt601_luma", "rgb_luma_bt601", "y_channel_bt601"):
-            return self.pixel_loss(luma_bt601(pred), luma_bt601(target))
+            diff = self._pixel_difference(luma_bt601(pred), luma_bt601(target))
+            per_sample = diff.mean(dim=(1, 2, 3))
+            return self._weighted_mean(per_sample)
 
         raise ValueError(f"Unsupported loss.mode: {self.loss_mode}")
 
