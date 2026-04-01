@@ -1,0 +1,141 @@
+jobs:
+  - name: "crop_div2k_1080p"
+    mode: single
+    seed: 1234
+    sources:
+      main:
+        root: "../../data/DIV2K_train_HR"
+        glob: "*.png"
+        decoder:
+          type: image
+          color_space: rgb
+    pipeline:
+      - op: rotate_if_portrait
+        frames: [main]
+        direction: clockwise
+      - op: resize_if_ratio_close
+        frames: [main]
+        width: 1920
+        height: 1080
+        tolerance: 0.05
+        resample: bicubic
+        allow_upscale: false
+      - op: crop
+        frames: [main]
+        mode: grid_full
+        width: 1920
+        height: 1080
+        stride_x: 1920
+        stride_y: 1080
+        small_image: pad
+        pad_align: center
+        pad_color: [0, 0, 0]
+    outputs:
+      rgb:
+        frame: main
+        backend: files
+        output_path: "../../data/div2k_1080p_crops"
+        format: rgb_png
+        filename_pattern: "{index}_TR_{width}x{height}.png"
+        start_index: 10000
+        png_compress_level: 3
+
+  - name: "prepare_lq_nv12_to_packed_yuv444"
+    mode: single
+    sources:
+      lq:
+        root: "../../data/train_topaz_yuv/lq_nv12_raw"
+        glob: "*.yuv"
+        decoder:
+          type: raw_yuv
+          info_pattern: "^(?P<key>\\d+_TR_\\d+x\\d+)_(?P<pixel_format>nv12)\\.yuv$"
+          width: 1920
+          height: 1080
+    pipeline:
+      - op: yuv420_to_yuv444_nn
+        frame: lq
+    outputs:
+      lq:
+        frame: lq
+        backend: files
+        output_path: "../../data/train_topaz_yuv/intermediate_lq_png/lq"
+        format: packed_yuv444_png
+        filename_pattern: "{key}_444p.png"
+        png_compress_level: 3
+
+  - name: "prepare_gt_merge_sharpened_y_original_uv"
+    mode: paired
+    sources:
+      original:
+        root: "../../data/train_topaz_yuv/gt_png_original"
+        glob: "*.png"
+        key_pattern: "^(?P<key>\\d+_TR_\\d+x\\d+)\\.png$"
+        decoder:
+          type: image
+          color_space: rgb
+      sharpened:
+        root: "../../data/train_topaz_yuv/gt_png_topaz"
+        glob: "*.png"
+        key_pattern: "^(?P<key>\\d+_TR_\\d+x\\d+)(?:_topaz)?\\.png$"
+        decoder:
+          type: image
+          color_space: rgb
+    pipeline:
+      - op: rgb_to_yuv444
+        frame: original
+        matrix: internal_product
+      - op: rgb_to_yuv444
+        frame: sharpened
+        matrix: internal_product
+      - op: merge_yuv
+        y_from: sharpened
+        uv_from: original
+        out: gt
+    outputs:
+      gt:
+        frame: gt
+        backend: files
+        output_path: "../../data/train_topaz_yuv/intermediate_gt_png/gt"
+        format: packed_yuv444_png
+        filename_pattern: "{key}_444p.png"
+        png_compress_level: 3
+
+  - name: "pack_paired_lmdb"
+    mode: paired
+    sources:
+      lq:
+        root: "../../data/train_topaz_yuv/intermediate_lq_png/lq"
+        glob: "*.png"
+        key_pattern: "^(?P<key>\\d+_TR_\\d+x\\d+)_444p\\.png$"
+        decoder:
+          type: image
+          color_space: yuv444
+      gt:
+        root: "../../data/train_topaz_yuv/intermediate_gt_png/gt"
+        glob: "*.png"
+        key_pattern: "^(?P<key>\\d+_TR_\\d+x\\d+)_444p\\.png$"
+        decoder:
+          type: image
+          color_space: yuv444
+    pipeline: []
+    outputs:
+      lq:
+        frame: lq
+        backend: lmdb
+        output_path: "../../data/train_topaz_yuv/paired_lmdb/lq.lmdb"
+        format: packed_yuv444_png
+        key_pattern: "{key}_444p.png"
+        map_size_gb: 0.5
+        write_batch_size: 512
+        compact: true
+        png_compress_level: 3
+      gt:
+        frame: gt
+        backend: lmdb
+        output_path: "../../data/train_topaz_yuv/paired_lmdb/gt.lmdb"
+        format: packed_yuv444_png
+        key_pattern: "{key}_444p.png"
+        map_size_gb: 0.5
+        write_batch_size: 512
+        compact: true
+        png_compress_level: 3

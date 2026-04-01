@@ -1,65 +1,51 @@
-seed: 1234
-
-dataset:
-  mode: paired
-  pair_by_order: false
-  # LQ and GT filenames may differ by I420p / 420p / I444p / 444p,
-  # so pair them by the shared prefix before the pixel-format suffix.
-  pair_key_pattern: "^(?P<key>.+?)_(?:I)?(?:420|444)p\\.yuv$"
-
-  lq:
-    root: "data/train_uvsr/lq_yuv420"
-    glob: "*.yuv"
-    decoder:
-      type: raw_yuv
-      infer_from_filename: true
-      filename_pattern: "(?P<width>\\d+)x(?P<height>\\d+)_(?P<pixel_format>I420p|I444p|420p|444p)"
+jobs:
+  - name: "uvsr_yuv420_to_packed_yuv444_lmdb"
+    mode: paired
+    seed: 1234
+    sources:
+      lq:
+        root: "../../data/train_uvsr/lq_yuv420"
+        glob: "*.yuv"
+        key_pattern: "^(?P<key>.+?)_(?:I)?(?:420|444)p\\.yuv$"
+        decoder:
+          type: raw_yuv
+          info_pattern: "^(?P<key>.+?)_(?P<width>\\d+)x(?P<height>\\d+)_(?P<pixel_format>I420p|I444p|420p|444p)\\.yuv$"
+      gt:
+        root: "../../data/train_uvsr/gt_yuv444"
+        glob: "*.yuv"
+        key_pattern: "^(?P<key>.+?)_(?:I)?(?:420|444)p\\.yuv$"
+        decoder:
+          type: raw_yuv
+          info_pattern: "^(?P<key>.+?)_(?P<width>\\d+)x(?P<height>\\d+)_(?P<pixel_format>I420p|I444p|420p|444p)\\.yuv$"
     pipeline:
-      - name: "yuv420_to_yuv444_nn"
-
-  gt:
-    root: "data/train_uvsr/gt_yuv444"
-    glob: "*.yuv"
-    decoder:
-      type: raw_yuv
-      infer_from_filename: true
-      filename_pattern: "(?P<width>\\d+)x(?P<height>\\d+)_(?P<pixel_format>I420p|I444p|420p|444p)"
-    pipeline: []
-
-patching:
-  mode: grid_full
-  size: 256
-  stride: 256
-
-packing:
-  output_root: "data/train_uvsr_packed_lmdb"
-  show_progress: true
-  # Optional project-side meta index for training selection.
-  # meta_info_out:
-  #   lq: "datasets/train/uvsr/lq/meta_info.txt"
-  #   gt: "datasets/train/uvsr/gt/meta_info.txt"
-  outputs:
-    lq:
-      enabled: true
-      pipeline:
-        - name: "store_packed_yuv444_png"
-          params:
-            png_compress_level: 3
-        - name: "write_lmdb"
-          params:
-            lmdb_name: "lq.lmdb"
-            map_size_gb: 0.25
-            write_batch_size: 512
-            compact: true
-    gt:
-      enabled: true
-      pipeline:
-        - name: "store_packed_yuv444_png"
-          params:
-            png_compress_level: 3
-        - name: "write_lmdb"
-          params:
-            lmdb_name: "gt.lmdb"
-            map_size_gb: 0.25
-            write_batch_size: 512
-            compact: true
+      - op: yuv420_to_yuv444_nn
+        frame: lq
+      - op: crop
+        frames: [lq, gt]
+        reference: lq
+        mode: grid_full
+        width: 256
+        height: 256
+        stride_x: 256
+        stride_y: 256
+    outputs:
+      lq:
+        frame: lq
+        backend: lmdb
+        output_path: "../../data/train_uvsr_packed_lmdb/lq.lmdb"
+        format: packed_yuv444_png
+        key_pattern: "{index:08d}"
+        map_size_gb: 0.25
+        write_batch_size: 512
+        compact: true
+        png_compress_level: 3
+      gt:
+        frame: gt
+        backend: lmdb
+        output_path: "../../data/train_uvsr_packed_lmdb/gt.lmdb"
+        format: packed_yuv444_png
+        key_pattern: "{index:08d}"
+        map_size_gb: 0.25
+        write_batch_size: 512
+        compact: true
+        png_compress_level: 3

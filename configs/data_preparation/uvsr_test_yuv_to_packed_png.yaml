@@ -1,62 +1,37 @@
-seed: 1234
-
-dataset:
-  mode: paired
-  pair_by_order: false
-  # LQ and GT filenames may differ by I420p / 420p / I444p / 444p,
-  # so pair them by the shared prefix before the pixel-format suffix.
-  # Example:
-  # 0013_TE_1920x1080_I420p.yuv
-  # 0013_TE_1920x1080_I444p.yuv
-  # 0001_TE_1920x1080_420p.yuv
-  # 0001_TE_1920x1080_444p.yuv
-  pair_key_pattern: "^(?P<key>.+?)_(?:I)?(?:420|444)p\\.yuv$"
-
-  lq:
-    root: "data/test_uvsr/lq_yuv420"
-    glob: "*.yuv"
-    decoder:
-      type: raw_yuv
-      infer_from_filename: true
-      filename_pattern: "(?P<width>\\d+)x(?P<height>\\d+)_(?P<pixel_format>I420p|I444p|420p|444p)"
+jobs:
+  - name: "uvsr_test_yuv_to_packed_png"
+    mode: paired
+    seed: 1234
+    sources:
+      lq:
+        root: "../../data/test_uvsr/lq_yuv420"
+        glob: "*.yuv"
+        key_pattern: "^(?P<key>.+?)_(?:I)?(?:420|444)p\\.yuv$"
+        decoder:
+          type: raw_yuv
+          info_pattern: "^(?P<key>.+?)_(?P<width>\\d+)x(?P<height>\\d+)_(?P<pixel_format>I420p|I444p|420p|444p)\\.yuv$"
+      gt:
+        root: "../../data/test_uvsr/gt_yuv444"
+        glob: "*.yuv"
+        key_pattern: "^(?P<key>.+?)_(?:I)?(?:420|444)p\\.yuv$"
+        decoder:
+          type: raw_yuv
+          info_pattern: "^(?P<key>.+?)_(?P<width>\\d+)x(?P<height>\\d+)_(?P<pixel_format>I420p|I444p|420p|444p)\\.yuv$"
     pipeline:
-      - name: "yuv420_to_yuv444_nn"
-
-  gt:
-    root: "data/test_uvsr/gt_yuv444"
-    glob: "*.yuv"
-    decoder:
-      type: raw_yuv
-      infer_from_filename: true
-      filename_pattern: "(?P<width>\\d+)x(?P<height>\\d+)_(?P<pixel_format>I420p|I444p|420p|444p)"
-    pipeline: []
-
-patching:
-  mode: none
-
-packing:
-  output_root: "data/test_uvsr_packed_png"
-  show_progress: true
-  outputs:
-    lq:
-      enabled: true
-      pipeline:
-        - name: "store_packed_yuv444_png"
-          params:
-            png_compress_level: 3
-        - name: "write_files"
-          params:
-            dir_name: "lq"
-            filename_mode: "source_stem"
-            filename_suffix: "_yuv444png"
-    gt:
-      enabled: true
-      pipeline:
-        - name: "store_packed_yuv444_png"
-          params:
-            png_compress_level: 3
-        - name: "write_files"
-          params:
-            dir_name: "gt"
-            filename_mode: "source_stem"
-            filename_suffix: "_yuv444png"
+      - op: yuv420_to_yuv444_nn
+        frame: lq
+    outputs:
+      lq:
+        frame: lq
+        backend: files
+        output_path: "../../data/test_uvsr_packed_png/lq"
+        format: packed_yuv444_png
+        filename_pattern: "{source_lq_stem}_yuv444png.png"
+        png_compress_level: 3
+      gt:
+        frame: gt
+        backend: files
+        output_path: "../../data/test_uvsr_packed_png/gt"
+        format: packed_yuv444_png
+        filename_pattern: "{source_gt_stem}_yuv444png.png"
+        png_compress_level: 3

@@ -1,0 +1,41 @@
+jobs:
+  - name: "crop_div2k_1080p"
+    mode: single
+    seed: 1234
+    sources:
+      main:
+        root: "../../data/DIV2K_train_HR"
+        glob: "*.png"
+        decoder:
+          type: image
+          color_space: rgb
+    pipeline:
+      - op: rotate_if_portrait
+        frames: [main]
+        direction: clockwise
+      - op: resize_if_ratio_close
+        frames: [main]
+        width: 1920
+        height: 1080
+        tolerance: 0.05
+        resample: bicubic
+        allow_upscale: false
+      - op: crop
+        frames: [main]
+        mode: grid_full
+        width: 1920
+        height: 1080
+        stride_x: 1920
+        stride_y: 1080
+        small_image: pad
+        pad_align: center
+        pad_color: [0, 0, 0]
+    outputs:
+      rgb:
+        frame: main
+        backend: files
+        output_path: "../../data/div2k_1080p_crops"
+        format: rgb_png
+        filename_pattern: "{index}_TR_{width}x{height}.png"
+        start_index: 10000
+        png_compress_level: 3

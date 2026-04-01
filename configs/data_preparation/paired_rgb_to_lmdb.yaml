@@ -1,51 +1,44 @@
-seed: 1234
-
-dataset:
-  mode: paired
-  pair_by_order: false
-
-  lq:
-    root: "data/train/inputs"
-    decoder:
-      type: image
-    pipeline: []
-
-  gt:
-    root: "data/train/targets"
-    decoder:
-      type: image
-    pipeline: []
-
-patching:
-  mode: grid
-  size: 256
-  stride: 256
-
-packing:
-  output_root: "data/train_paired_lmdb"
-  show_progress: true
-  outputs:
-    lq:
-      enabled: true
-      pipeline:
-        - name: "store_rgb_png"
-          params:
-            png_compress_level: 3
-        - name: "write_lmdb"
-          params:
-            lmdb_name: "lq.lmdb"
-            map_size_gb: 0.25
-            write_batch_size: 512
-            compact: true
-    gt:
-      enabled: true
-      pipeline:
-        - name: "store_rgb_png"
-          params:
-            png_compress_level: 3
-        - name: "write_lmdb"
-          params:
-            lmdb_name: "gt.lmdb"
-            map_size_gb: 0.25
-            write_batch_size: 512
-            compact: true
+jobs:
+  - name: "paired_rgb_to_lmdb"
+    mode: paired
+    seed: 1234
+    sources:
+      lq:
+        root: "../../data/train/inputs"
+        decoder:
+          type: image
+          color_space: rgb
+      gt:
+        root: "../../data/train/targets"
+        decoder:
+          type: image
+          color_space: rgb
+    pipeline:
+      - op: crop
+        frames: [lq, gt]
+        mode: grid
+        width: 256
+        height: 256
+        stride_x: 256
+        stride_y: 256
+    outputs:
+      lq:
+        frame: lq
+        backend: lmdb
+        output_path: "../../data/train_paired_lmdb/lq.lmdb"
+        format: rgb_png
+        key_pattern: "{index:08d}"
+        map_size_gb: 0.25
+        write_batch_size: 512
+        compact: true
+        png_compress_level: 3
+      gt:
+        frame: gt
+        backend: lmdb
+        output_path: "../../data/train_paired_lmdb/gt.lmdb"
+        format: rgb_png
+        key_pattern: "{index:08d}"
+        map_size_gb: 0.25
+        write_batch_size: 512
+        compact: true
+        png_compress_level: 3
