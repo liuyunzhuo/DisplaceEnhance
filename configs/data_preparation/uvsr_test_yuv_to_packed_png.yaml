@@ -26,12 +26,12 @@ jobs:
         backend: files
         output_path: "../../data/test_uvsr_packed_png/lq"
         format: packed_yuv444_png
-        filename_pattern: "{source_lq_stem}_yuv444png.png"
+        filename_pattern: "{key}_444p.png"
         png_compress_level: 3
       gt:
         frame: gt
         backend: files
         output_path: "../../data/test_uvsr_packed_png/gt"
         format: packed_yuv444_png
-        filename_pattern: "{source_gt_stem}_yuv444png.png"
+        filename_pattern: "{key}_444p.png"
         png_compress_level: 3

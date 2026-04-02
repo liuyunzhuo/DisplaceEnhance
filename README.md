@@ -31,6 +31,7 @@ Available example configs:
 - `configs/sharpen_paired_aug.yaml`
 - `configs/sharpen_paired_lmdb.yaml`
 - `configs/sharpen_paired_lmdb_desktop_lq_only_mix.yaml`
+- `configs/uvsr_train/uvsr_paired_lmdb_uv_msssim_tv.yaml`
 - `configs/data_preparation/paired_rgb_to_lmdb.yaml`
 - `configs/data_preparation/desktop_yuv420_identity_lmdb.yaml`
 - `configs/data_preparation/uvsr_yuv420_to_packed_yuv444_lmdb.yaml`

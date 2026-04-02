@@ -9,6 +9,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 
 import src.models  # noqa: F401
 from src.utils.color import luma_bt601
+from .losses import build_loss_terms, compute_term_loss
 from .registry import MODEL_REGISTRY, NETWORK_REGISTRY
 
 
@@ -42,10 +43,14 @@ class ImageRestorationModel:
         loss_opt = train_opt.get("loss", {})
         loss_type = loss_opt.get("type", "L1")
         self.loss_type = loss_type
+        self.loss_terms = None
         if loss_type == "L1":
             self.pixel_loss = nn.L1Loss()
         elif loss_type == "MSE":
             self.pixel_loss = nn.MSELoss()
+        elif loss_type == "Composite":
+            self.pixel_loss = None
+            self.loss_terms = build_loss_terms(loss_opt)
         else:
             raise ValueError(f"Unsupported loss.type: {loss_type}")
 
@@ -57,6 +62,7 @@ class ImageRestorationModel:
         self.gt: torch.Tensor | None = None
         self.prediction: torch.Tensor | None = None
         self.sample_weight: torch.Tensor | None = None
+        self.last_loss_terms: Dict[str, float] = {}
 
     def feed_data(self, data: Dict[str, torch.Tensor]) -> None:
         self.lq = data["lq"].to(self.device)
@@ -87,6 +93,19 @@ class ImageRestorationModel:
         return (values * weights).sum() / weight_sum
 
     def _compute_pixel_loss(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        if self.loss_type == "Composite":
+            if not self.loss_terms:
+                raise ValueError("Composite loss requires configured loss terms.")
+            total = pred.new_tensor(0.0)
+            self.last_loss_terms = {}
+            for term in self.loss_terms:
+                raw_value = compute_term_loss(term, pred, target)
+                weighted_value = raw_value * term.weight
+                total = total + weighted_value
+                self.last_loss_terms[term.name] = weighted_value.detach().item()
+            self.last_loss_terms["total"] = total.detach().item()
+            return total
+
         if self.loss_mode in ("all_channels", "direct"):
             diff = self._pixel_difference(pred, target)
             if self.channel_weights:
@@ -115,6 +134,8 @@ class ImageRestorationModel:
         if self.grad_clip and self.grad_clip > 0:
             torch.nn.utils.clip_grad_norm_(self.network.parameters(), self.grad_clip)
         self.optimizer.step()
+        if self.loss_type == "Composite":
+            return dict(self.last_loss_terms)
         return {"pixel": loss.item()}
 
     @torch.no_grad()

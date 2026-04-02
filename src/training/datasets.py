@@ -23,6 +23,17 @@ def _list_image_files(root: Path) -> Tuple[Path, ...]:
     return tuple(sorted(p for p in root.iterdir() if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS))
 
 
+def _to_tensor_with_range(img: Image.Image, range_mode: str) -> torch.Tensor:
+    arr = np.array(img, dtype=np.float32)
+    tensor = torch.from_numpy(arr).permute(2, 0, 1).contiguous()
+    key = range_mode.lower()
+    if key in ("zero_one", "normalized_01", "default"):
+        return tensor / 255.0
+    if key in ("byte_centered", "centered_255"):
+        return tensor - 128.0
+    raise ValueError(f"Unsupported to_tensor range_mode: {range_mode}")
+
+
 def _resolve_meta_path(root_path: Path, meta_info: str) -> Path:
     meta_path = Path(meta_info)
     if meta_path.is_absolute():
@@ -290,7 +301,6 @@ class PairedImageDataset(Dataset):
 
         default_size = opt.get("default_size", 256)
         self.resize = transforms.Resize((default_size, default_size))
-        self.to_tensor = transforms.ToTensor()
         self.lq_op, self.gt_op = _make_ops()
 
     def __len__(self) -> int:
@@ -394,10 +404,11 @@ class PairedImageDataset(Dataset):
             elif name == "to_tensor":
                 if lq_img is None or gt_img is None:
                     raise ValueError("to_tensor requires both lq and gt images")
+                range_mode = str(params.get("range_mode", "zero_one"))
                 if isinstance(lq_img, Image.Image):
-                    lq_img = self.to_tensor(lq_img)
+                    lq_img = _to_tensor_with_range(lq_img, range_mode)
                 if isinstance(gt_img, Image.Image):
-                    gt_img = self.to_tensor(gt_img)
+                    gt_img = _to_tensor_with_range(gt_img, range_mode)
             elif name == "augment":
                 if lq_img is None or gt_img is None:
                     raise ValueError("augment requires both lq and gt tensors")
@@ -491,7 +502,6 @@ class PairedLmdbDataset(Dataset):
             self.keys = self.lq_keys
         default_size = opt.get("default_size", 256)
         self.resize = transforms.Resize((default_size, default_size))
-        self.to_tensor = transforms.ToTensor()
         self.lq_op, self.gt_op = _make_ops()
 
         self._env_lq: Optional[lmdb.Environment] = None
@@ -642,10 +652,11 @@ class PairedLmdbDataset(Dataset):
             elif name == "to_tensor":
                 if lq_img is None or gt_img is None:
                     raise ValueError("to_tensor requires both lq and gt images")
+                range_mode = str(params.get("range_mode", "zero_one"))
                 if isinstance(lq_img, Image.Image):
-                    lq_img = self.to_tensor(lq_img)
+                    lq_img = _to_tensor_with_range(lq_img, range_mode)
                 if isinstance(gt_img, Image.Image):
-                    gt_img = self.to_tensor(gt_img)
+                    gt_img = _to_tensor_with_range(gt_img, range_mode)
             elif name == "augment":
                 if lq_img is None or gt_img is None:
                     raise ValueError("augment requires both lq and gt tensors")

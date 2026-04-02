@@ -4,13 +4,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, Sequence, Tuple
 
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 
 from src.utils.color import packed_yuv444_to_rgb
 from src.utils.logger import ExperimentLogger
-from src.utils.metrics import psnr
+from src.utils.metrics import psnr, psnr_per_channel
 
 
 @dataclass
@@ -46,6 +47,8 @@ class TrainingEngine:
         self.train_opt = opt["train"]
         self.val_opt = opt.get("val", {})
         self.save_images = bool(self.val_opt.get("save_img", True))
+        self.save_format = str(self.val_opt.get("save_format", "png")).lower()
+        self.tensor_range = str(self.val_opt.get("tensor_range", "zero_one")).lower()
         self.visualization_pipeline = (self.val_opt.get("visualization", {}) or {}).get("pipeline", [])
 
         (self.run_dir / "models").mkdir(parents=True, exist_ok=True)
@@ -54,18 +57,55 @@ class TrainingEngine:
 
     def _save_visuals(
         self,
+        lq: torch.Tensor,
         pred: torch.Tensor,
+        gt: torch.Tensor,
         step: int,
         paths: Sequence[str],
         start_index: int,
     ) -> None:
         out_dir = self.run_dir / "visualization" / f"iter_{step:08d}"
         out_dir.mkdir(parents=True, exist_ok=True)
-        visual_pred = self._apply_visualization_pipeline(pred)
         for i in range(pred.size(0)):
             sample_index = start_index + i
             source_name = Path(paths[i]).stem if i < len(paths) else f"{sample_index:03d}"
-            save_image(visual_pred[i], out_dir / f"{sample_index:03d}_{source_name}.png")
+            if self.save_format == "png":
+                visual_pred = self._apply_visualization_pipeline(self._to_normalized_range(pred[i : i + 1]))
+                save_image(visual_pred[0], out_dir / f"{sample_index:03d}_{source_name}.png")
+                continue
+            if self.save_format in ("raw_yuv444", "yuv444", "yuv444p"):
+                self._save_raw_yuv444(lq[i], out_dir, sample_index, f"{source_name}_lq")
+                self._save_raw_yuv444(pred[i], out_dir, sample_index, f"{source_name}_pred")
+                self._save_raw_yuv444(gt[i], out_dir, sample_index, f"{source_name}_gt")
+                continue
+            raise ValueError(f"Unsupported val.save_format: {self.save_format}")
+
+    def _save_raw_yuv444(
+        self,
+        pred: torch.Tensor,
+        out_dir: Path,
+        sample_index: int,
+        source_name: str,
+    ) -> None:
+        if pred.dim() != 3 or pred.size(0) != 3:
+            raise ValueError("raw_yuv444 saving expects a CHW tensor with 3 channels.")
+        normalized = self._to_normalized_range(pred.unsqueeze(0))[0]
+        chw = normalized.detach().clamp(0.0, 1.0).mul(255.0).round().to(torch.uint8).cpu()
+        height = int(chw.size(1))
+        width = int(chw.size(2))
+        y = chw[0].contiguous().numpy().reshape(-1)
+        u = chw[1].contiguous().numpy().reshape(-1)
+        v = chw[2].contiguous().numpy().reshape(-1)
+        payload = np.concatenate([y, u, v]).tobytes()
+        out_path = out_dir / f"{sample_index:03d}_{source_name}_{width}x{height}_444p.yuv"
+        out_path.write_bytes(payload)
+
+    def _to_normalized_range(self, x: torch.Tensor) -> torch.Tensor:
+        if self.tensor_range in ("zero_one", "normalized_01", "default"):
+            return x
+        if self.tensor_range in ("byte_centered", "centered_255"):
+            return torch.clamp((x + 128.0) / 255.0, 0.0, 1.0)
+        raise ValueError(f"Unsupported val.tensor_range: {self.tensor_range}")
 
     def _apply_visualization_pipeline(self, pred: torch.Tensor) -> torch.Tensor:
         out = pred
@@ -102,6 +142,9 @@ class TrainingEngine:
         self.model.network.eval()
         total_l1 = 0.0
         total_psnr = 0.0
+        total_y_psnr = 0.0
+        total_u_psnr = 0.0
+        total_v_psnr = 0.0
         count = 0
         saved_count = 0
         with torch.no_grad():
@@ -109,18 +152,36 @@ class TrainingEngine:
                 self.model.feed_data(batch)
                 lq, pred, gt = self.model.test()
                 loss = self.model.compute_loss(pred, gt)
+                metric_max_val = 255.0 if self.tensor_range in ("byte_centered", "centered_255") else 1.0
                 total_l1 += loss.item()
-                total_psnr += psnr(pred, gt).item()
+                total_psnr += psnr(pred, gt, max_val=metric_max_val).item()
+                if pred.size(1) >= 3:
+                    channel_psnr = psnr_per_channel(pred, gt, max_val=metric_max_val)
+                    total_y_psnr += channel_psnr[0].item()
+                    total_u_psnr += channel_psnr[1].item()
+                    total_v_psnr += channel_psnr[2].item()
                 count += 1
                 if self.save_images:
                     lq_paths = batch.get("lq_path", [])
                     if isinstance(lq_paths, str):
                         lq_paths = [lq_paths]
-                    self._save_visuals(pred, step, lq_paths, saved_count)
+                    self._save_visuals(lq, pred, gt, step, lq_paths, saved_count)
                     saved_count += pred.size(0)
         if count == 0:
-            return {"val/l1": 0.0, "val/psnr": 0.0}
-        return {"val/l1": total_l1 / count, "val/psnr": total_psnr / count}
+            return {
+                "val/l1": 0.0,
+                "val/psnr": 0.0,
+                "val/y_psnr": 0.0,
+                "val/u_psnr": 0.0,
+                "val/v_psnr": 0.0,
+            }
+        return {
+            "val/l1": total_l1 / count,
+            "val/psnr": total_psnr / count,
+            "val/y_psnr": total_y_psnr / count,
+            "val/u_psnr": total_u_psnr / count,
+            "val/v_psnr": total_v_psnr / count,
+        }
 
     def run(self) -> None:
         total_iter = int(self.train_opt["total_iter"])

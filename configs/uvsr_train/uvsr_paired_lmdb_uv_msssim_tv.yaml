@@ -1,0 +1,98 @@
+name: "uvsr_paired_lmdb_uv_msssim_tv"
+seed: 42
+model_type: "ImageRestorationModel"
+
+datasets:
+  train:
+    name: "train_uvsr_paired_lmdb"
+    type: "PairedLmdbDataset"
+    mode: "paired"
+    dataroot_lq: "data/train_uvsr_packed_lmdb/lq.lmdb"
+    dataroot_gt: "data/train_uvsr_packed_lmdb/gt.lmdb"
+    meta_info: "meta_info.txt"
+    batch_size_per_gpu: 8
+    num_worker_per_gpu: 4
+    pipeline:
+      - name: "crop"
+        params: { size: 256, random: true }
+      - name: "to_tensor"
+        params:
+          range_mode: "byte_centered"
+      - name: "augment"
+        params: { flip: true, rot: true }
+
+  val:
+    name: "val_uvsr_paired_png"
+    type: "PairedImageDataset"
+    mode: "paired"
+    dataroot_lq: "data/test_uvsr_packed_png/lq"
+    dataroot_gt: "data/test_uvsr_packed_png/gt"
+    meta_info_lq: "meta_info.txt"
+    meta_info_gt: "meta_info.txt"
+    batch_size_per_gpu: 1
+    num_worker_per_gpu: 2
+    pipeline:
+      - name: "to_tensor"
+        params:
+          range_mode: "byte_centered"
+
+network:
+  type: "UVSR_Unet"
+  in_channels: 3
+  out_channels: 3
+  base_channels: 32
+  encoder_depth: 4
+  max_channels: 256
+  bilinear: true
+  use_batch_norm: false
+  act: "relu"
+  residual: true
+  preserve_y_channel: true
+  output_clamp: false
+
+path:
+  experiments_root: "experiments"
+  resume_state: null
+  strict_load_model: true
+
+train:
+  total_iter: 50000
+  optimizer:
+    type: "Adam"
+    lr: 1.0e-4
+    betas: [0.9, 0.99]
+    weight_decay: 0.0
+  scheduler:
+    type: "CosineAnnealingLR"
+    T_max: 50
+  loss:
+    type: "Composite"
+    terms:
+      - name: "uv_msssim"
+        type: "MS_SSIM"
+        mode: "uv_channels"
+        single_channel: true
+        weight: 1.0
+        data_range: 1.0
+        normalize_before_loss: true
+        input_min: -128.0
+        input_max: 127.0
+      - name: "uv_grad_l1"
+        type: "GradientL1"
+        mode: "uv_channels"
+        weight: 1.0
+        normalize_before_loss: true
+        input_min: -128.0
+        input_max: 127.0
+  grad_clip: 1.0
+  val_freq: 1000
+  save_checkpoint_freq: 5000
+
+val:
+  save_img: true
+  save_format: "raw_yuv444"
+  tensor_range: "byte_centered"
+
+logger:
+  print_freq: 100
+  use_tb_logger: true
