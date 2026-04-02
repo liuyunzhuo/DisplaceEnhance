@@ -210,10 +210,13 @@ class TrainingEngine:
             self.model.feed_data(batch)
             losses = self.model.optimize_parameters()
             self.model.step_scheduler()
+            losses_with_lr = dict(losses)
+            if hasattr(self.model, "get_current_learning_rate"):
+                losses_with_lr["lr"] = self.model.get_current_learning_rate()
 
             if self.state.iter % print_freq == 0:
-                self.logger.log_metrics(self.state.iter, {f"train/{k}": v for k, v in losses.items()})
-                self.logger.info(f"[Iter {self.state.iter}/{total_iter}] {losses}")
+                self.logger.log_metrics(self.state.iter, {f"train/{k}": v for k, v in losses_with_lr.items()})
+                self.logger.info(f"[Iter {self.state.iter}/{total_iter}] {losses_with_lr}")
 
             if self.state.iter % val_freq == 0:
                 val_metrics = self._validate(self.state.iter)

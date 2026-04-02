@@ -50,6 +50,16 @@ def gradient_l1_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     return 0.5 * (loss_x + loss_y)
 
 
+def gradient_mse_hw_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    pred_gx, pred_gy = gradient_map(pred)
+    target_gx, target_gy = gradient_map(target)
+    b, _, h, w = pred.shape
+    denom = max(b * h * w, 1)
+    loss_x = torch.pow(pred_gx - target_gx, 2).sum() / denom
+    loss_y = torch.pow(pred_gy - target_gy, 2).sum() / denom
+    return 0.5 * (loss_x + loss_y)
+
+
 @dataclass
 class LossTerm:
     name: str
@@ -123,5 +133,8 @@ def compute_term_loss(term: LossTerm, pred: torch.Tensor, target: torch.Tensor) 
 
     if term_key in ("GRADIENTL1", "TVL1", "TVLOSS"):
         return gradient_l1_loss(pred_sel, target_sel)
+
+    if term_key in ("GRADIENTMSE", "GRADIENTMSEHW", "TVMSE"):
+        return gradient_mse_hw_loss(pred_sel, target_sel)
 
     raise ValueError(f"Unsupported composite loss term type: {term.type}")

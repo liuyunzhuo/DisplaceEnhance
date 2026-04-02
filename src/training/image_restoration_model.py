@@ -5,7 +5,7 @@ from typing import Dict, Tuple
 import torch
 from torch import nn
 from torch.optim import Adam
-from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.optim.lr_scheduler import CosineAnnealingLR, MultiStepLR
 
 import src.models  # noqa: F401
 from src.utils.color import luma_bt601
@@ -39,6 +39,15 @@ class ImageRestorationModel:
         sched_opt = train_opt.get("scheduler", {})
         if sched_opt.get("type") == "CosineAnnealingLR":
             self.scheduler = CosineAnnealingLR(self.optimizer, T_max=int(sched_opt.get("T_max", 50)))
+        elif sched_opt.get("type") == "MultiStepLR":
+            milestones = sched_opt.get("milestones", sched_opt.get("lr_steps", []))
+            if not milestones:
+                raise ValueError("MultiStepLR requires milestones or lr_steps.")
+            self.scheduler = MultiStepLR(
+                self.optimizer,
+                milestones=[int(m) for m in milestones],
+                gamma=float(sched_opt.get("gamma", sched_opt.get("lr_gamma", 0.1))),
+            )
 
         loss_opt = train_opt.get("loss", {})
         loss_type = loss_opt.get("type", "L1")
@@ -148,6 +157,9 @@ class ImageRestorationModel:
     def step_scheduler(self) -> None:
         if self.scheduler:
             self.scheduler.step()
+
+    def get_current_learning_rate(self) -> float:
+        return float(self.optimizer.param_groups[0]["lr"])
 
     def state_dict(self) -> Dict:
         return {"model": self.network.state_dict(), "optimizer": self.optimizer.state_dict()}
