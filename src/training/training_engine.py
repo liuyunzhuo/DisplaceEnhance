@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 from typing import Dict, Iterable, Sequence, Tuple
 
 import numpy as np
@@ -57,34 +58,45 @@ class TrainingEngine:
 
     def _save_visuals(
         self,
-        lq: torch.Tensor,
         pred: torch.Tensor,
-        gt: torch.Tensor,
         step: int,
         paths: Sequence[str],
-        start_index: int,
     ) -> None:
         out_dir = self.run_dir / "visualization" / f"iter_{step:08d}"
         out_dir.mkdir(parents=True, exist_ok=True)
         for i in range(pred.size(0)):
-            sample_index = start_index + i
-            source_name = Path(paths[i]).stem if i < len(paths) else f"{sample_index:03d}"
+            source_name = Path(paths[i]).stem if i < len(paths) else f"sample_{i:03d}"
+            base_name = self._build_visual_base_name(source_name)
             if self.save_format == "png":
                 visual_pred = self._apply_visualization_pipeline(self._to_normalized_range(pred[i : i + 1]))
-                save_image(visual_pred[0], out_dir / f"{sample_index:03d}_{source_name}.png")
+                save_image(visual_pred[0], out_dir / f"{base_name}_pred.png")
                 continue
             if self.save_format in ("raw_yuv444", "yuv444", "yuv444p"):
-                self._save_raw_yuv444(lq[i], out_dir, sample_index, f"{source_name}_lq")
-                self._save_raw_yuv444(pred[i], out_dir, sample_index, f"{source_name}_pred")
-                self._save_raw_yuv444(gt[i], out_dir, sample_index, f"{source_name}_gt")
+                self._save_raw_yuv444(pred[i], out_dir, f"{base_name}_pred")
                 continue
             raise ValueError(f"Unsupported val.save_format: {self.save_format}")
+
+    def _build_visual_base_name(self, source_name: str) -> str:
+        # Collapse packed/test naming variants like:
+        # 0007_TE_1920x1080_420p_yuv444png -> 0007_TE_1920x1080
+        # 0007_TE_1920x1080_444p          -> 0007_TE_1920x1080
+        patterns = (
+            r"_(?:I)?(?:420p|444p)_yuv444png$",
+            r"_(?:I)?(?:420p|444p)$",
+            r"_444p$",
+        )
+        base_name = source_name
+        for pattern in patterns:
+            new_name = re.sub(pattern, "", base_name, flags=re.IGNORECASE)
+            if new_name != base_name:
+                base_name = new_name
+                break
+        return base_name
 
     def _save_raw_yuv444(
         self,
         pred: torch.Tensor,
         out_dir: Path,
-        sample_index: int,
         source_name: str,
     ) -> None:
         if pred.dim() != 3 or pred.size(0) != 3:
@@ -97,7 +109,7 @@ class TrainingEngine:
         u = chw[1].contiguous().numpy().reshape(-1)
         v = chw[2].contiguous().numpy().reshape(-1)
         payload = np.concatenate([y, u, v]).tobytes()
-        out_path = out_dir / f"{sample_index:03d}_{source_name}_{width}x{height}_444p.yuv"
+        out_path = out_dir / f"{source_name}_444p.yuv"
         out_path.write_bytes(payload)
 
     def _to_normalized_range(self, x: torch.Tensor) -> torch.Tensor:
@@ -165,7 +177,7 @@ class TrainingEngine:
                     lq_paths = batch.get("lq_path", [])
                     if isinstance(lq_paths, str):
                         lq_paths = [lq_paths]
-                    self._save_visuals(lq, pred, gt, step, lq_paths, saved_count)
+                    self._save_visuals(pred, step, lq_paths)
                     saved_count += pred.size(0)
         if count == 0:
             return {
