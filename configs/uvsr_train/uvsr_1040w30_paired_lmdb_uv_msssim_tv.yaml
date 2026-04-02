@@ -1,4 +1,4 @@
-name: "uvsr_paired_lmdb_uv_msssim_tv"
+name: "uvsr_1040w30_paired_lmdb_uv_msssim_tv"
 seed: 42
 model_type: "ImageRestorationModel"
 
@@ -37,17 +37,15 @@ datasets:
           range_mode: "byte_centered"
 
 network:
-  type: "UVSR_Unet"
+  type: "UVSR_1040W30"
   in_channels: 3
   out_channels: 3
-  base_channels: 32
-  encoder_depth: 4
-  max_channels: 256
-  bilinear: true
-  use_batch_norm: false
+  down_out_c: 12
+  first_out_c: 16
+  hidden_out_c: 16
+  mid_channels: 32
   act: "relu"
-  residual: true
-  preserve_y_channel: true
+  bn_bias: false
   output_clamp: false
 
 path:
