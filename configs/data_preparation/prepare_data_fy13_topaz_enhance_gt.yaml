@@ -1,0 +1,44 @@
+jobs:
+  - name: "prepare_fy13_enhance_gt"
+    mode: paired
+    seed: 1234
+    sources:
+      original:
+        # Original GT PNG, for example: 10000_TR_1920x1080.png
+        root: "../../png"
+        glob: "*.png"
+        key_pattern: "^(?P<key>\\d+_TR_\\d+x\\d+)\\.png$"
+        decoder:
+          type: image
+          color_space: rgb
+
+      sharpened:
+        # Topaz sharpened GT PNG, for example: 10000_TR_1920x1080-topaz-sharpen.png
+        root: "../../topaz-shapen"
+        glob: "*.png"
+        key_pattern: "^(?P<key>\\d+_TR_\\d+x\\d+)-topaz-sharpen\\.png$"
+        decoder:
+          type: image
+          color_space: rgb
+
+    pipeline:
+      - op: rgb_to_yuv444
+        frame: original
+        matrix: internal_product
+
+      - op: rgb_to_yuv444
+        frame: sharpened
+        matrix: internal_product
+
+      - op: merge_yuv
+        y_from: sharpened
+        uv_from: original
+        out: enhance_gt
+
+    outputs:
+      enhance_gt:
+        frame: enhance_gt
+        backend: files
+        output_path: "../../enhance-gt"
+        format: raw_yuv444
+        filename_pattern: "{key}_444p.yuv"

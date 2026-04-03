@@ -204,6 +204,38 @@ def _build_source_entries(
         else:
             key = path.stem
         entries.append(SourceEntry(source_name=source_name, path=path, key=key, raw_info=raw_info))
+
+    key_min = source_opt.get("key_min")
+    key_max = source_opt.get("key_max")
+    if key_min is not None or key_max is not None:
+        filtered: list[SourceEntry] = []
+        for entry in entries:
+            try:
+                numeric_key = int(entry.key)
+            except ValueError as exc:
+                raise SystemExit(
+                    f"key_min/key_max require integer-like keys, but got '{entry.key}' from {entry.path.name}"
+                ) from exc
+            if key_min is not None and numeric_key < int(key_min):
+                continue
+            if key_max is not None and numeric_key > int(key_max):
+                continue
+            filtered.append(entry)
+        entries = filtered
+
+    sort_by = str(source_opt.get("sort_by", "path")).lower()
+    if sort_by == "path":
+        entries = sorted(entries, key=lambda e: str(e.path).lower())
+    elif sort_by == "key":
+        entries = sorted(entries, key=lambda e: e.key)
+    elif sort_by == "key_numeric":
+        try:
+            entries = sorted(entries, key=lambda e: int(e.key))
+        except ValueError as exc:
+            raise SystemExit("sort_by: key_numeric requires integer-like keys.") from exc
+    else:
+        raise SystemExit(f"Unsupported source sort_by: {sort_by}")
+
     if not entries:
         raise SystemExit(f"No source files found for source '{source_name}'.")
     return tuple(entries)
@@ -957,6 +989,19 @@ def _render_pattern(pattern: str, context: dict[str, Any]) -> str:
         raise SystemExit(f"Missing format key in pattern '{pattern}': {exc}") from exc
 
 
+def _context_for_entry(entry: SourceEntry, index: int) -> dict[str, Any]:
+    context = {
+        "key": entry.key,
+        "index": index,
+        "source_name": entry.path.name,
+        "source_stem": entry.path.stem,
+        "source_suffix": entry.path.suffix,
+    }
+    for key, value in entry.raw_info.items():
+        context[key] = value
+    return context
+
+
 def _encode_frame(frame: Frame, format_name: str, png_compress_level: int) -> bytes:
     if format_name == "rgb_png":
         if frame.color_space != "rgb":
@@ -1132,6 +1177,61 @@ def _finalize_outputs(output_states: dict[str, OutputState]) -> None:
             (state.output_path / "meta_info.txt").write_text("".join(state.meta_lines), encoding="utf-8")
 
 
+def _run_rename_job(job_opt: dict[str, Any], base_dir: Path, job_index: int, total_jobs: int) -> None:
+    job_name = str(job_opt.get("name", f"job_{job_index}"))
+    print(f"[{job_index}/{total_jobs}] Running job: {job_name}")
+
+    source_opt = job_opt.get("source")
+    if not isinstance(source_opt, dict):
+        raise SystemExit("rename_files job requires a 'source' mapping.")
+    rename_opt = job_opt.get("rename")
+    if not isinstance(rename_opt, dict):
+        raise SystemExit("rename_files job requires a 'rename' mapping.")
+
+    source_name = str(job_opt.get("source_name", "main"))
+    entries = list(_build_source_entries(source_name, source_opt, base_dir))
+    in_place = bool(rename_opt.get("in_place", False))
+    if in_place:
+        output_dir = _resolve_path(base_dir, source_opt["root"])
+    else:
+        if "output_dir" not in rename_opt:
+            raise SystemExit("rename_files job requires rename.output_dir when in_place is false.")
+        output_dir = _resolve_path(base_dir, rename_opt["output_dir"])
+    start_index = int(rename_opt.get("start_index", 0))
+    filename_pattern = str(rename_opt["filename_pattern"])
+
+    _ensure_dir(output_dir)
+
+    plans: list[tuple[SourceEntry, Path]] = []
+    for offset, entry in enumerate(entries):
+        context = _context_for_entry(entry, start_index + offset)
+        rendered_name = _render_pattern(filename_pattern, context)
+        target_path = output_dir / rendered_name
+        plans.append((entry, target_path))
+
+    existing_targets = {target.resolve() for _, target in plans if target.exists()}
+    source_paths = {entry.path.resolve() for entry, _ in plans}
+    conflicts = [str(target) for _, target in plans if target.resolve() in existing_targets and target.resolve() not in source_paths]
+    if conflicts:
+        raise SystemExit(f"Rename targets already exist: {conflicts[:5]}")
+
+    if in_place:
+        temp_pairs: list[tuple[Path, Path]] = []
+        for idx, (entry, _) in enumerate(plans):
+            temp_path = entry.path.with_name(f".rename_tmp_{idx:08d}{entry.path.suffix}")
+            if temp_path.exists():
+                raise SystemExit(f"Temporary rename path already exists: {temp_path}")
+            entry.path.rename(temp_path)
+            temp_pairs.append((temp_path, entry.path))
+        for (temp_path, _), (_, target_path) in zip(temp_pairs, plans):
+            temp_path.rename(target_path)
+    else:
+        for entry, target_path in plans:
+            entry.path.rename(target_path)
+
+    print(f"[{job_index}/{total_jobs}] Finished job: {job_name} ({len(plans)} files)")
+
+
 def _run_job(job_opt: dict[str, Any], base_dir: Path, job_index: int, total_jobs: int) -> None:
     job_name = str(job_opt.get("name", f"job_{job_index}"))
     seed = int(job_opt.get("seed", 1234))
@@ -1171,6 +1271,10 @@ def main() -> None:
     for idx, job in enumerate(jobs, start=1):
         if not isinstance(job, dict):
             raise SystemExit(f"jobs[{idx}] must be a mapping.")
+        job_type = str(job.get("type", "pipeline")).lower()
+        if job_type == "rename_files":
+            _run_rename_job(job, config_dir, idx, len(jobs))
+            continue
         _run_job(job, config_dir, idx, len(jobs))
     print("All jobs completed.")
 

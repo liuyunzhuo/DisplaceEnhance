@@ -1,0 +1,15 @@
+jobs:
+  - name: "rename_scale_nv12_679_1478"
+    type: "rename_files"
+    source:
+      # Change only this root to your real NV12 folder on the server.
+      root: "/path/to/nv12_folder"
+      glob: "scaleNv12_crop_chn0_*.yuv"
+      key_pattern: "^scaleNv12_crop_chn0_(?P<key>\\d+)\\.yuv$"
+      key_min: 679
+      key_max: 1478
+      sort_by: "key_numeric"
+    rename:
+      in_place: true
+      start_index: 10000
+      filename_pattern: "{index}_TR_1920x1080_nv12.yuv"

@@ -4,7 +4,7 @@ jobs:
     seed: 1234
     sources:
       main:
-        root: "../../data/DIV2K_train_HR"
+        root: "C:\\Users\\52254\\Desktop\\新建文件夹\\1"
         glob: "*.png"
         decoder:
           type: image
@@ -22,7 +22,7 @@ jobs:
         allow_upscale: false
       - op: crop
         frames: [main]
-        mode: grid_full
+        mode: center
         width: 1920
         height: 1080
         stride_x: 1920
@@ -34,7 +34,7 @@ jobs:
       rgb:
         frame: main
         backend: files
-        output_path: "../../data/div2k_1080p_crops"
+        output_path: "C:\\Users\\52254\\Desktop\\新建文件夹\\2"
         format: rgb_png
         filename_pattern: "{index}_TR_{width}x{height}.png"
         start_index: 10000
