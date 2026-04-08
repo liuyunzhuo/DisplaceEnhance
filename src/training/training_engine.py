@@ -48,6 +48,7 @@ class TrainingEngine:
         self.train_opt = opt["train"]
         self.val_opt = opt.get("val", {})
         self.save_images = bool(self.val_opt.get("save_img", True))
+        self.save_img_freq = int(self.val_opt.get("save_img_freq", 0))
         self.save_format = str(self.val_opt.get("save_format", "png")).lower()
         self.tensor_range = str(self.val_opt.get("tensor_range", "zero_one")).lower()
         self.visualization_pipeline = (self.val_opt.get("visualization", {}) or {}).get("pipeline", [])
@@ -150,7 +151,7 @@ class TrainingEngine:
     def load_state(self, state: Dict) -> None:
         self.state.iter = int(state.get("iter", 0))
 
-    def _validate(self, step: int) -> Dict[str, float]:
+    def _validate(self, step: int, save_visuals: bool) -> Dict[str, float]:
         self.model.network.eval()
         total_l1 = 0.0
         total_psnr = 0.0
@@ -173,7 +174,7 @@ class TrainingEngine:
                     total_u_psnr += channel_psnr[1].item()
                     total_v_psnr += channel_psnr[2].item()
                 count += 1
-                if self.save_images:
+                if save_visuals:
                     lq_paths = batch.get("lq_path", [])
                     if isinstance(lq_paths, str):
                         lq_paths = [lq_paths]
@@ -219,7 +220,10 @@ class TrainingEngine:
                 self.logger.info(f"[Iter {self.state.iter}/{total_iter}] {losses_with_lr}")
 
             if self.state.iter % val_freq == 0:
-                val_metrics = self._validate(self.state.iter)
+                save_visuals = self.save_images and (
+                    self.save_img_freq <= 0 or self.state.iter % self.save_img_freq == 0
+                )
+                val_metrics = self._validate(self.state.iter, save_visuals=save_visuals)
                 self.logger.log_metrics(self.state.iter, val_metrics)
                 self.logger.info(f"[Val {self.state.iter}] {val_metrics}")
                 if val_metrics["val/psnr"] > best_psnr:

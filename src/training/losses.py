@@ -64,6 +64,10 @@ def pixel_l1_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     return torch.abs(pred - target).mean()
 
 
+def pixel_mse_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    return torch.pow(pred - target, 2).mean()
+
+
 @dataclass
 class LossTerm:
     name: str
@@ -143,5 +147,8 @@ def compute_term_loss(term: LossTerm, pred: torch.Tensor, target: torch.Tensor) 
 
     if term_key in ("L1", "PIXELL1"):
         return pixel_l1_loss(pred_sel, target_sel)
+
+    if term_key in ("MSE", "PIXELMSE"):
+        return pixel_mse_loss(pred_sel, target_sel)
 
     raise ValueError(f"Unsupported composite loss term type: {term.type}")

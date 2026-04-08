@@ -91,6 +91,7 @@ train:
 
 val:
   save_img: true
+  save_img_freq: 10000
   save_format: "raw_yuv444"
   tensor_range: "byte_centered"
 

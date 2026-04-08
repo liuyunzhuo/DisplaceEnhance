@@ -104,8 +104,8 @@ train:
         normalize_before_loss: true
         input_min: -128.0
         input_max: 127.0
-      - name: "y_l1"
-        type: "L1"
+      - name: "y_mse"
+        type: "MSE"
         mode: "y_channel"
         weight: 1.0
         normalize_before_loss: true
@@ -117,6 +117,7 @@ train:
 
 val:
   save_img: true
+  save_img_freq: 10000
   save_format: "raw_yuv444"
   tensor_range: "byte_centered"
 
