@@ -1,0 +1,44 @@
+jobs:
+  - name: "prepare_deblur_test_topaz_enhance_gt"
+    mode: paired
+    seed: 1234
+    sources:
+      original:
+        # Example: 0001_TE_1920x1080.png
+        root: "D:\\Projects\\DisplayEnhance\\datasets\\deblur\\test\\gt"
+        glob: "*.png"
+        key_pattern: "^(?P<key>\\d+_TE_\\d+x\\d+)\\.png$"
+        decoder:
+          type: image
+          color_space: rgb
+
+      sharpened:
+        # Example: 0001_TE_1920x1080-topaz-sharpen.png
+        root: "D:\\Projects\\DisplayEnhance\\datasets\\deblur\\test\\topaz"
+        glob: "*.png"
+        key_pattern: "^(?P<key>\\d+_TE_\\d+x\\d+)-topaz-sharpen\\.png$"
+        decoder:
+          type: image
+          color_space: rgb
+
+    pipeline:
+      - op: rgb_to_yuv444
+        frame: original
+        matrix: internal_product
+
+      - op: rgb_to_yuv444
+        frame: sharpened
+        matrix: internal_product
+
+      - op: merge_yuv
+        y_from: sharpened
+        uv_from: original
+        out: enhance_gt
+
+    outputs:
+      enhance_gt:
+        frame: enhance_gt
+        backend: files
+        output_path: "D:\\Projects\\DisplayEnhance\\datasets\\deblur\\test\\enhance-gt"
+        format: raw_yuv444
+        filename_pattern: "{key}_444p.yuv"

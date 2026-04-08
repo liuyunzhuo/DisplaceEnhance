@@ -1,0 +1,57 @@
+jobs:
+  - name: "fy13_enhance_gt_to_packed_lmdb"
+    mode: paired
+    seed: 1234
+    sources:
+      lq:
+        # Example filename: 10000_TR_1920x1080_nv12.yuv
+        root: "../../fy13"
+        glob: "*.yuv"
+        key_pattern: "^(?P<key>\\d+_TR_\\d+x\\d+)_nv12\\.yuv$"
+        decoder:
+          type: raw_yuv
+          info_pattern: "^(?P<key>\\d+_TR_(?P<width>\\d+)x(?P<height>\\d+))_(?P<pixel_format>nv12)\\.yuv$"
+
+      gt:
+        # Example filename: 10000_TR_1920x1080_444p.yuv
+        root: "../../enhance_gt"
+        glob: "*.yuv"
+        key_pattern: "^(?P<key>\\d+_TR_\\d+x\\d+)_444p\\.yuv$"
+        decoder:
+          type: raw_yuv
+          info_pattern: "^(?P<key>\\d+_TR_(?P<width>\\d+)x(?P<height>\\d+))_(?P<pixel_format>444p)\\.yuv$"
+
+    pipeline:
+      - op: yuv420_to_yuv444_nn
+        frame: lq
+      - op: crop
+        frames: [lq, gt]
+        reference: lq
+        mode: grid_full
+        width: 192
+        height: 192
+        stride_x: 192
+        stride_y: 192
+
+    outputs:
+      lq:
+        frame: lq
+        backend: lmdb
+        output_path: "../../data/fy13_enhance_gt_lmdb/lq.lmdb"
+        format: packed_yuv444_png
+        key_pattern: "{index:08d}"
+        map_size_gb: 0.5
+        write_batch_size: 512
+        compact: true
+        png_compress_level: 3
+
+      gt:
+        frame: gt
+        backend: lmdb
+        output_path: "../../data/fy13_enhance_gt_lmdb/gt.lmdb"
+        format: packed_yuv444_png
+        key_pattern: "{index:08d}"
+        map_size_gb: 0.5
+        write_batch_size: 512
+        compact: true
+        png_compress_level: 3

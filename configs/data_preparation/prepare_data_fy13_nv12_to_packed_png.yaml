@@ -1,0 +1,26 @@
+jobs:
+  - name: "fy13_nv12_to_packed_png"
+    mode: single
+    seed: 1234
+    sources:
+      lq:
+        # Example filename: 10000_TR_1920x1080_nv12.yuv
+        root: "../../fy13"
+        glob: "*.yuv"
+        key_pattern: "^(?P<key>\\d+_TR_\\d+x\\d+)_nv12\\.yuv$"
+        decoder:
+          type: raw_yuv
+          info_pattern: "^(?P<key>\\d+_TR_(?P<width>\\d+)x(?P<height>\\d+))_(?P<pixel_format>nv12)\\.yuv$"
+
+    pipeline:
+      - op: yuv420_to_yuv444_nn
+        frame: lq
+
+    outputs:
+      lq:
+        frame: lq
+        backend: files
+        output_path: "../../fy13-packed-png"
+        format: packed_yuv444_png
+        filename_pattern: "{key}_444p.png"
+        png_compress_level: 3

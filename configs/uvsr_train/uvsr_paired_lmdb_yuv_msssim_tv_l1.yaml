@@ -1,0 +1,125 @@
+name: "uvsr_paired_lmdb_yuv_msssim_tv_l1"
+seed: 42
+model_type: "ImageRestorationModel"
+
+datasets:
+  train:
+    batch_size_per_gpu: 64
+    num_worker_per_gpu: 4
+    datasets:
+      - name: "train_uvsr_set_a"
+        type: "PairedLmdbDataset"
+        mode: "paired"
+        dataroot_lq: "/data1/datasets/UVSR/train/lmdb/sub_lq.lmdb"
+        dataroot_gt: "/data1/datasets/UVSR/train/lmdb/sub_gt.lmdb"
+        meta_info: "meta_info.txt"
+        repeat: 1
+        pipeline:
+          - name: "crop"
+            params: { size: 192, random: true }
+          - name: "to_tensor"
+            params:
+              range_mode: "byte_centered"
+          - name: "augment"
+            params: { flip: true, rot: true }
+
+      # Add a second train dataset by uncommenting and editing the paths below.
+      # - name: "train_uvsr_set_b"
+      #   type: "PairedLmdbDataset"
+      #   mode: "paired"
+      #   dataroot_lq: "/data1/datasets/UVSR/train2/lmdb/sub_lq.lmdb"
+      #   dataroot_gt: "/data1/datasets/UVSR/train2/lmdb/sub_gt.lmdb"
+      #   meta_info: "meta_info.txt"
+      #   repeat: 1
+      #   pipeline:
+      #     - name: "crop"
+      #       params: { size: 192, random: true }
+      #     - name: "to_tensor"
+      #       params:
+      #         range_mode: "byte_centered"
+      #     - name: "augment"
+      #       params: { flip: true, rot: true }
+
+  val:
+    name: "val_uvsr_paired_png"
+    type: "PairedImageDataset"
+    mode: "paired"
+    dataroot_lq: "/data1/datasets/UVSR/test/yuv444png/lq/"
+    dataroot_gt: "/data1/datasets/UVSR/test/yuv444png/gt/"
+    meta_info_lq: "datasets/test/lq/meta_info.txt"
+    meta_info_gt: "datasets/test/gt/meta_info.txt"
+    batch_size_per_gpu: 1
+    num_worker_per_gpu: 2
+    pipeline:
+      - name: "to_tensor"
+        params:
+          range_mode: "byte_centered"
+
+network:
+  type: "UVSR_YUV_Unet"
+  in_channels: 3
+  out_channels: 3
+  base_channels: 32
+  encoder_depth: 4
+  max_channels: 256
+  bilinear: true
+  use_batch_norm: false
+  act: "relu"
+  residual_y: true
+  residual_uv: true
+  output_clamp: false
+
+path:
+  experiments_root: "experiments"
+  resume_state: null
+  strict_load_model: true
+
+train:
+  total_iter: 300000
+  optimizer:
+    type: "Adam"
+    lr: 1.0e-4
+    betas: [0.9, 0.99]
+    weight_decay: 0.0
+  scheduler:
+    type: "MultiStepLR"
+    milestones: [100000, 200000, 250000, 300000]
+    gamma: 0.25
+  loss:
+    type: "Composite"
+    terms:
+      - name: "uv_msssim"
+        type: "MS_SSIM"
+        mode: "uv_channels"
+        single_channel: true
+        weight: 1.0
+        data_range: 1.0
+        normalize_before_loss: true
+        input_min: -128.0
+        input_max: 127.0
+      - name: "uv_grad_mse_hw"
+        type: "GradientMSEHW"
+        mode: "uv_channels"
+        weight: 1.0
+        normalize_before_loss: true
+        input_min: -128.0
+        input_max: 127.0
+      - name: "y_l1"
+        type: "L1"
+        mode: "y_channel"
+        weight: 1.0
+        normalize_before_loss: true
+        input_min: -128.0
+        input_max: 127.0
+  grad_clip: 1.0
+  val_freq: 1000
+  save_checkpoint_freq: 5000
+
+val:
+  save_img: true
+  save_format: "raw_yuv444"
+  tensor_range: "byte_centered"
+
+logger:
+  print_freq: 100
+  use_tb_logger: true
