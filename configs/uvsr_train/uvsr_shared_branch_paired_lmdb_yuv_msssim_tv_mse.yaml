@@ -1,4 +1,4 @@
-name: "uvsr_paired_lmdb_uv_msssim_tv"
+name: "uvsr_shared_branch_paired_lmdb_yuv_msssim_tv_mse"
 seed: 42
 model_type: "ImageRestorationModel"
 
@@ -55,17 +55,18 @@ datasets:
           range_mode: "byte_centered"
 
 network:
-  type: "UVSR_Unet"
+  type: "UVSR_SharedBranchNet"
   in_channels: 3
   out_channels: 3
-  base_channels: 32
-  encoder_depth: 4
-  max_channels: 256
-  bilinear: true
+  stem_channels: 64
+  base_channels: 64
+  shared_blocks: 8
+  y_blocks: 4
+  uv_blocks: 4
   use_batch_norm: false
   act: "relu"
-  residual: true
-  preserve_y_channel: true
+  residual_y: true
+  residual_uv: true
   output_clamp: false
 
 path:
@@ -99,6 +100,13 @@ train:
       - name: "uv_grad_mse_hw"
         type: "GradientMSEHW"
         mode: "uv_channels"
+        weight: 1.0
+        normalize_before_loss: true
+        input_min: -128.0
+        input_max: 127.0
+      - name: "y_mse"
+        type: "MSE"
+        mode: "y_channel"
         weight: 1.0
         normalize_before_loss: true
         input_min: -128.0

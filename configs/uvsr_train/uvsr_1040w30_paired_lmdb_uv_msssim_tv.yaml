@@ -4,22 +4,40 @@ model_type: "ImageRestorationModel"
 
 datasets:
   train:
-    name: "train_uvsr_paired_lmdb"
-    type: "PairedLmdbDataset"
-    mode: "paired"
-    dataroot_lq: "/data1/datasets/UVSR/train/lmdb/sub_lq.lmdb"
-    dataroot_gt: "/data1/datasets/UVSR/train/lmdb/sub_gt.lmdb"
-    meta_info: "meta_info.txt"
     batch_size_per_gpu: 64
     num_worker_per_gpu: 4
-    pipeline:
-      - name: "crop"
-        params: { size: 192, random: true }
-      - name: "to_tensor"
-        params:
-          range_mode: "byte_centered"
-      - name: "augment"
-        params: { flip: true, rot: true }
+    datasets:
+      - name: "train_uvsr_set_a"
+        type: "PairedLmdbDataset"
+        mode: "paired"
+        dataroot_lq: "/data1/datasets/UVSR/train/lmdb/sub_lq.lmdb"
+        dataroot_gt: "/data1/datasets/UVSR/train/lmdb/sub_gt.lmdb"
+        meta_info: "meta_info.txt"
+        repeat: 1
+        pipeline:
+          - name: "crop"
+            params: { size: 192, random: true }
+          - name: "to_tensor"
+            params:
+              range_mode: "byte_centered"
+          - name: "augment"
+            params: { flip: true, rot: true }
+
+      - name: "train_uvsr_set_b"
+        type: "PairedLmdbDataset"
+        mode: "paired"
+        dataroot_lq: "/data1/datasets/Deblur/train/Div2k/lmdb/lq.lmdb/"
+        dataroot_gt: "/data1/datasets/Deblur/train/Div2k/lmdb/gt.lmdb/"
+        meta_info: "meta_info.txt"
+        repeat: 1
+        pipeline:
+          - name: "crop"
+            params: { size: 192, random: true }
+          - name: "to_tensor"
+            params:
+              range_mode: "byte_centered"
+          - name: "augment"
+            params: { flip: true, rot: true }
 
   val:
     name: "val_uvsr_paired_png"
