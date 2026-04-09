@@ -77,7 +77,11 @@ class UVSR_SharedBranchNet(nn.Module):
         stem_channels: int = 64,
         shared_blocks: int = 8,
         y_blocks: int = 4,
+        y_base_blocks: int = 0,
+        y_detail_blocks: int = 0,
+        y_mask_blocks: int = 0,
         uv_blocks: int = 4,
+        process_scale: int = 2,
         use_batch_norm: bool = False,
         act: str = "relu",
         residual_y: bool = True,
@@ -93,7 +97,11 @@ class UVSR_SharedBranchNet(nn.Module):
             stem_channels = int(cfg.get("stem_channels", cfg.get("first_out_c", stem_channels)))
             shared_blocks = int(cfg.get("shared_blocks", shared_blocks))
             y_blocks = int(cfg.get("y_blocks", y_blocks))
+            y_base_blocks = int(cfg.get("y_base_blocks", y_base_blocks))
+            y_detail_blocks = int(cfg.get("y_detail_blocks", y_detail_blocks))
+            y_mask_blocks = int(cfg.get("y_mask_blocks", y_mask_blocks))
             uv_blocks = int(cfg.get("uv_blocks", uv_blocks))
+            process_scale = int(cfg.get("process_scale", process_scale))
             use_batch_norm = bool(cfg.get("use_batch_norm", cfg.get("bn", use_batch_norm)))
             act = str(cfg.get("act", act))
             residual_y = bool(cfg.get("residual_y", residual_y))
@@ -102,8 +110,17 @@ class UVSR_SharedBranchNet(nn.Module):
 
         if in_channels != 3 or out_channels != 3:
             raise ValueError("UVSR_SharedBranchNet expects 3-channel packed YUV444 input/output.")
-        if shared_blocks <= 0 or y_blocks <= 0 or uv_blocks <= 0:
-            raise ValueError("shared_blocks, y_blocks, and uv_blocks must be positive.")
+        if process_scale != 2:
+            raise ValueError("UVSR_SharedBranchNet currently supports only process_scale=2.")
+        if y_base_blocks <= 0:
+            y_base_blocks = y_blocks
+        if y_detail_blocks <= 0:
+            y_detail_blocks = y_blocks
+        if y_mask_blocks <= 0:
+            y_mask_blocks = max(1, y_blocks // 2)
+
+        if shared_blocks <= 0 or y_base_blocks <= 0 or y_detail_blocks <= 0 or y_mask_blocks <= 0 or uv_blocks <= 0:
+            raise ValueError("shared/y/uv block counts must be positive.")
 
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -111,7 +128,11 @@ class UVSR_SharedBranchNet(nn.Module):
         self.stem_channels = stem_channels
         self.shared_blocks = shared_blocks
         self.y_blocks = y_blocks
+        self.y_base_blocks = y_base_blocks
+        self.y_detail_blocks = y_detail_blocks
+        self.y_mask_blocks = y_mask_blocks
         self.uv_blocks = uv_blocks
+        self.process_scale = process_scale
         self.use_batch_norm = use_batch_norm
         self.act_name = act
         self.residual_y = residual_y
@@ -131,6 +152,14 @@ class UVSR_SharedBranchNet(nn.Module):
         stem_layers.append(make_activation(act))
         self.stem = nn.Sequential(*stem_layers)
 
+        down_layers: list[nn.Module] = [
+            nn.Conv2d(base_channels, base_channels, kernel_size=3, stride=2, padding=1, bias=bias),
+        ]
+        if use_batch_norm:
+            down_layers.append(nn.BatchNorm2d(base_channels))
+        down_layers.append(make_activation(act))
+        self.downsample = nn.Sequential(*down_layers)
+
         self.shared_trunk = ResidualStack(
             base_channels,
             shared_blocks,
@@ -138,12 +167,26 @@ class UVSR_SharedBranchNet(nn.Module):
             use_batch_norm=use_batch_norm,
         )
 
-        self.y_adapter = nn.Conv2d(base_channels, base_channels, kernel_size=3, padding=1, bias=bias)
+        self.y_base_adapter = nn.Conv2d(base_channels, base_channels, kernel_size=3, padding=1, bias=bias)
+        self.y_detail_adapter = nn.Conv2d(base_channels, base_channels, kernel_size=3, padding=1, bias=bias)
+        self.y_mask_adapter = nn.Conv2d(base_channels, base_channels, kernel_size=3, padding=1, bias=bias)
         self.uv_adapter = nn.Conv2d(base_channels, base_channels, kernel_size=3, padding=1, bias=bias)
 
-        self.y_branch = ResidualStack(
+        self.y_base_branch = ResidualStack(
             base_channels,
-            y_blocks,
+            y_base_blocks,
+            act=act,
+            use_batch_norm=use_batch_norm,
+        )
+        self.y_detail_branch = ResidualStack(
+            base_channels,
+            y_detail_blocks,
+            act=act,
+            use_batch_norm=use_batch_norm,
+        )
+        self.y_mask_branch = ResidualStack(
+            base_channels,
+            y_mask_blocks,
             act=act,
             use_batch_norm=use_batch_norm,
         )
@@ -154,8 +197,11 @@ class UVSR_SharedBranchNet(nn.Module):
             use_batch_norm=use_batch_norm,
         )
 
-        self.y_head = nn.Conv2d(base_channels, 1, kernel_size=3, padding=1)
-        self.uv_head = nn.Conv2d(base_channels, 2, kernel_size=3, padding=1)
+        self.y_base_head = nn.Conv2d(base_channels, 4, kernel_size=3, padding=1)
+        self.y_detail_head = nn.Conv2d(base_channels, 4, kernel_size=3, padding=1)
+        self.y_mask_head = nn.Conv2d(base_channels, 4, kernel_size=3, padding=1)
+        self.uv_head = nn.Conv2d(base_channels, 8, kernel_size=3, padding=1)
+        self.pixel_shuffle = nn.PixelShuffle(self.process_scale)
 
     def split_yuv(self, yuv: torch.Tensor, mode: str = "i444p") -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         if yuv.dim() != 4:
@@ -171,15 +217,26 @@ class UVSR_SharedBranchNet(nn.Module):
             raise ValueError("UVSR_SharedBranchNet expects a 4D NCHW tensor.")
         if x.size(1) != self.in_channels:
             raise ValueError(f"Expected {self.in_channels} input channels, but received {x.size(1)}.")
+        if x.size(-2) % self.process_scale != 0 or x.size(-1) % self.process_scale != 0:
+            raise ValueError(
+                f"Input spatial size must be divisible by process_scale={self.process_scale}, "
+                f"got {tuple(x.shape[-2:])}."
+            )
 
         feat = self.stem(x)
+        feat = self.downsample(feat)
         shared = self.shared_trunk(feat)
 
-        y_feat = self.y_branch(self.y_adapter(shared))
+        y_base_feat = self.y_base_branch(self.y_base_adapter(shared))
+        y_detail_feat = self.y_detail_branch(self.y_detail_adapter(shared))
+        y_mask_feat = self.y_mask_branch(self.y_mask_adapter(shared))
         uv_feat = self.uv_branch(self.uv_adapter(shared))
 
-        pred_y = self.y_head(y_feat)
-        pred_uv = self.uv_head(uv_feat)
+        pred_y_base = self.pixel_shuffle(self.y_base_head(y_base_feat))
+        pred_y_detail = self.pixel_shuffle(self.y_detail_head(y_detail_feat))
+        pred_y_mask = torch.sigmoid(self.pixel_shuffle(self.y_mask_head(y_mask_feat)))
+        pred_y = pred_y_base + pred_y_mask * pred_y_detail
+        pred_uv = self.pixel_shuffle(self.uv_head(uv_feat))
 
         y_in = x[:, 0:1, :, :]
         uv_in = x[:, 1:3, :, :]

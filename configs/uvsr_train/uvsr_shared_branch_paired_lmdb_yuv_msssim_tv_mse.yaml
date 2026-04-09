@@ -60,9 +60,13 @@ network:
   out_channels: 3
   stem_channels: 64
   base_channels: 64
-  shared_blocks: 8
-  y_blocks: 4
-  uv_blocks: 4
+  process_scale: 2
+  shared_blocks: 4
+  y_blocks: 2
+  y_base_blocks: 2
+  y_detail_blocks: 2
+  y_mask_blocks: 1
+  uv_blocks: 2
   use_batch_norm: false
   act: "relu"
   residual_y: true
@@ -104,8 +108,17 @@ train:
         normalize_before_loss: true
         input_min: -128.0
         input_max: 127.0
-      - name: "y_mse"
-        type: "MSE"
+      - name: "y_msssim"
+        type: "MS_SSIM"
+        mode: "y_channel"
+        single_channel: true
+        weight: 1.0
+        data_range: 1.0
+        normalize_before_loss: true
+        input_min: -128.0
+        input_max: 127.0
+      - name: "y_grad_mse_hw"
+        type: "GradientMSEHW"
         mode: "y_channel"
         weight: 1.0
         normalize_before_loss: true
