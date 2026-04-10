@@ -43,10 +43,10 @@ datasets:
     name: "val_uvsr_paired_png"
     type: "PairedImageDataset"
     mode: "paired"
-    dataroot_lq: "/data1/datasets/UVSR/test/yuv444png/lq/"
-    dataroot_gt: "/data1/datasets/UVSR/test/yuv444png/gt/"
-    meta_info_lq: "datasets/test/lq/meta_info.txt"
-    meta_info_gt: "datasets/test/gt/meta_info.txt"
+    dataroot_lq: "/data1/datasets/Deblur/test/lq/"
+    dataroot_gt: "/data1/datasets/Deblur/test/gt/"
+    meta_info_lq: "/data1/datasets/Deblur/test/lq/meta_info.txt"
+    meta_info_gt: "/data1/datasets/Deblur/test/gt/meta_info.txt"
     batch_size_per_gpu: 1
     num_worker_per_gpu: 2
     pipeline:

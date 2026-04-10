@@ -82,6 +82,39 @@ def make_uvsr_pixshuffle(requires_grad: bool = False) -> nn.ConvTranspose2d:
     return layer
 
 
+def make_fixed_dwt_downsample(out_c: int = 12) -> nn.Conv2d:
+    if out_c != 12:
+        raise ValueError("make_fixed_dwt_downsample currently supports only out_c=12.")
+
+    weight = torch.zeros((out_c, 3, 2 * 2), dtype=torch.float32)
+    dwt_filter = torch.tensor(
+        (
+            [[0.5, 0.5, 0.5, 0.5]],
+            [[-0.5, 0.5, -0.5, 0.5]],
+            [[-0.5, -0.5, 0.5, 0.5]],
+            [[0.5, -0.5, -0.5, 0.5]],
+        ),
+        dtype=torch.float32,
+    )
+    dwt_ft_sz = int(dwt_filter.shape[0])
+    weight[:dwt_ft_sz, :1, :] = dwt_filter
+    extra_c = (out_c - dwt_ft_sz) // 2
+    for i in range(extra_c):
+        weight[dwt_ft_sz + i, 1:2, i % 4] = 1.0
+        weight[dwt_ft_sz + extra_c + i, 2:3, i % 4] = 1.0
+
+    layer = nn.Conv2d(
+        in_channels=3,
+        out_channels=out_c,
+        kernel_size=2,
+        stride=2,
+        padding=0,
+        bias=False,
+    )
+    layer.weight = nn.Parameter(weight.reshape(out_c, 3, 2, 2), requires_grad=False)
+    return layer
+
+
 @NETWORK_REGISTRY.register()
 class UVSR_1040W30(nn.Module):
     def __init__(
@@ -173,33 +206,7 @@ class UVSR_1040W30(nn.Module):
         return layer
 
     def _get_dwt_layer(self, out_c: int = 12) -> nn.Conv2d:
-        weight = torch.zeros((out_c, 3, 2 * 2), dtype=torch.float32)
-        dwt_filter = torch.tensor(
-            (
-                [[0.5, 0.5, 0.5, 0.5]],
-                [[-0.5, 0.5, -0.5, 0.5]],
-                [[-0.5, -0.5, 0.5, 0.5]],
-                [[0.5, -0.5, -0.5, 0.5]],
-            ),
-            dtype=torch.float32,
-        )
-        dwt_ft_sz = int(dwt_filter.shape[0])
-        weight[:dwt_ft_sz, :1, :] = dwt_filter
-        extra_c = (out_c - dwt_ft_sz) // 2
-        for i in range(extra_c):
-            weight[dwt_ft_sz + i, 1:2, i % 4] = 1.0
-            weight[dwt_ft_sz + extra_c + i, 2:3, i % 4] = 1.0
-
-        layer = nn.Conv2d(
-            in_channels=3,
-            out_channels=out_c,
-            kernel_size=2,
-            stride=2,
-            padding=0,
-            bias=False,
-        )
-        layer.weight = nn.Parameter(weight.reshape(out_c, 3, 2, 2), requires_grad=False)
-        return layer
+        return make_fixed_dwt_downsample(out_c)
 
     def split_yuv(self, yuv: torch.Tensor, mode: str = "i420p") -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         if yuv.dim() != 4:

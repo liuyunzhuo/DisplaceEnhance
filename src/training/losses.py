@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List
 
 import torch
+import torch.nn.functional as F
 
 def select_channels(x: torch.Tensor, mode: str) -> torch.Tensor:
     key = mode.lower()
@@ -68,6 +69,34 @@ def pixel_mse_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     return torch.pow(pred - target, 2).mean()
 
 
+def router_weak_ce_loss(router_logits: torch.Tensor, domain_label: torch.Tensor, label_smoothing: float = 0.0) -> torch.Tensor:
+    if router_logits.dim() != 4 or router_logits.size(1) != 2:
+        raise ValueError("router_weak_ce_loss expects router logits with shape [B, 2, H, W].")
+    pooled_logits = router_logits.mean(dim=(2, 3))
+    labels = domain_label.long().view(-1)
+    if pooled_logits.size(0) != labels.numel():
+        raise ValueError("router_weak_ce_loss batch size mismatch between logits and labels.")
+    if label_smoothing <= 0.0:
+        return F.cross_entropy(pooled_logits, labels)
+
+    num_classes = pooled_logits.size(1)
+    if num_classes <= 1:
+        raise ValueError("router_weak_ce_loss requires at least 2 classes.")
+    smoothing = float(label_smoothing)
+    if smoothing >= 1.0:
+        raise ValueError("label_smoothing must be < 1.0.")
+
+    with torch.no_grad():
+        target = torch.full_like(
+            pooled_logits,
+            fill_value=smoothing / (num_classes - 1),
+        )
+        target.scatter_(1, labels.unsqueeze(1), 1.0 - smoothing)
+
+    log_probs = F.log_softmax(pooled_logits, dim=1)
+    return -(target * log_probs).sum(dim=1).mean()
+
+
 @dataclass
 class LossTerm:
     name: str
@@ -79,6 +108,7 @@ class LossTerm:
     normalize_before_loss: bool = False
     input_min: float = 0.0
     input_max: float = 1.0
+    label_smoothing: float = 0.0
 
 
 def build_loss_terms(loss_opt: Dict[str, Any]) -> List[LossTerm]:
@@ -105,6 +135,7 @@ def build_loss_terms(loss_opt: Dict[str, Any]) -> List[LossTerm]:
                 normalize_before_loss=bool(term_opt.get("normalize_before_loss", False)),
                 input_min=float(term_opt.get("input_min", 0.0)),
                 input_max=float(term_opt.get("input_max", 1.0)),
+                label_smoothing=float(term_opt.get("label_smoothing", 0.0)),
             )
         )
     return terms

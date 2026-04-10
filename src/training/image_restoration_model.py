@@ -9,7 +9,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR, MultiStepLR
 
 import src.models  # noqa: F401
 from src.utils.color import luma_bt601
-from .losses import build_loss_terms, compute_term_loss
+from .losses import build_loss_terms, compute_term_loss, router_weak_ce_loss
 from .registry import MODEL_REGISTRY, NETWORK_REGISTRY
 
 
@@ -71,11 +71,17 @@ class ImageRestorationModel:
         self.gt: torch.Tensor | None = None
         self.prediction: torch.Tensor | None = None
         self.sample_weight: torch.Tensor | None = None
+        self.domain_label: torch.Tensor | None = None
         self.last_loss_terms: Dict[str, float] = {}
 
     def feed_data(self, data: Dict[str, torch.Tensor]) -> None:
         self.lq = data["lq"].to(self.device)
         self.gt = data["gt"].to(self.device)
+        domain_label = data.get("domain_label")
+        if domain_label is None:
+            self.domain_label = None
+        else:
+            self.domain_label = torch.as_tensor(domain_label, device=self.device).view(-1)
         sample_weight = data.get("loss_weight")
         if sample_weight is None:
             batch = self.lq.size(0)
@@ -108,7 +114,21 @@ class ImageRestorationModel:
             total = pred.new_tensor(0.0)
             self.last_loss_terms = {}
             for term in self.loss_terms:
-                raw_value = compute_term_loss(term, pred, target)
+                term_key = term.type.upper().replace("-", "_").replace("_", "")
+                if term_key == "ROUTERWEAKCE":
+                    if self.domain_label is None:
+                        self.last_loss_terms[term.name] = 0.0
+                        continue
+                    router_logits = getattr(self.network, "last_router_logits", None)
+                    if router_logits is None:
+                        raise ValueError("RouterWeakCE requires network.last_router_logits to be populated.")
+                    raw_value = router_weak_ce_loss(
+                        router_logits,
+                        self.domain_label,
+                        label_smoothing=term.label_smoothing,
+                    )
+                else:
+                    raw_value = compute_term_loss(term, pred, target)
                 weighted_value = raw_value * term.weight
                 total = total + weighted_value
                 self.last_loss_terms[term.name] = weighted_value.detach().item()

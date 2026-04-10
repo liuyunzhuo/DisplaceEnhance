@@ -13,6 +13,7 @@ datasets:
         dataroot_lq: "/data1/datasets/UVSR/train/lmdb/sub_lq.lmdb"
         dataroot_gt: "/data1/datasets/UVSR/train/lmdb/sub_gt.lmdb"
         meta_info: "meta_info.txt"
+        domain_label: 0
         repeat: 1
         pipeline:
           - name: "crop"
@@ -29,6 +30,7 @@ datasets:
         dataroot_lq: "/data1/datasets/Deblur/train/Div2k/lmdb/lq.lmdb/"
         dataroot_gt: "/data1/datasets/Deblur/train/Div2k/lmdb/gt.lmdb/"
         meta_info: "meta_info.txt"
+        domain_label: 1
         repeat: 1
         pipeline:
           - name: "crop"
@@ -43,10 +45,10 @@ datasets:
     name: "val_uvsr_paired_png"
     type: "PairedImageDataset"
     mode: "paired"
-    dataroot_lq: "/data1/datasets/UVSR/test/yuv444png/lq/"
-    dataroot_gt: "/data1/datasets/UVSR/test/yuv444png/gt/"
-    meta_info_lq: "datasets/test/lq/meta_info.txt"
-    meta_info_gt: "datasets/test/gt/meta_info.txt"
+    dataroot_lq: "/data1/datasets/Deblur/test/lq/"
+    dataroot_gt: "/data1/datasets/Deblur/test/gt/"
+    meta_info_lq: "/data1/datasets/Deblur/test/lq/meta_info.txt"
+    meta_info_gt: "/data1/datasets/Deblur/test/gt/meta_info.txt"
     batch_size_per_gpu: 1
     num_worker_per_gpu: 2
     pipeline:
@@ -61,11 +63,13 @@ network:
   stem_channels: 64
   base_channels: 64
   process_scale: 2
+  downsample_type: "fixed_dwt_downsample"
   shared_blocks: 4
   y_blocks: 2
   y_base_blocks: 2
-  y_detail_blocks: 2
-  y_mask_blocks: 1
+  y_detail_desktop_blocks: 2
+  y_detail_natural_blocks: 2
+  y_router_blocks: 1
   uv_blocks: 2
   use_batch_norm: false
   act: "relu"
@@ -124,6 +128,10 @@ train:
         normalize_before_loss: true
         input_min: -128.0
         input_max: 127.0
+      - name: "router_weak_ce"
+        type: "RouterWeakCE"
+        weight: 0.05
+        label_smoothing: 0.05
   grad_clip: 1.0
   val_freq: 1000
   save_checkpoint_freq: 5000

@@ -268,6 +268,7 @@ class PairedImageDataset(Dataset):
         self.opt = opt
         self.mode = opt.get("mode", "paired")  # paired | gt_only | lq_only | paired_aug
         self.loss_weight = float(opt.get("loss_weight", 1.0))
+        self.domain_label = opt.get("domain_label")
         self.pipeline = opt.get("pipeline") or [
             {"name": "ops"},
             {"name": "resize"},
@@ -327,13 +328,16 @@ class PairedImageDataset(Dataset):
             gt_path = Path("generated_from_lq")
 
         lq, gt = self._run_pipeline(lq_img, gt_img)
-        return {
+        sample = {
             "lq": lq,
             "gt": gt,
             "lq_path": str(lq_path),
             "gt_path": str(gt_path),
             "loss_weight": self.loss_weight,
         }
+        if self.domain_label is not None:
+            sample["domain_label"] = int(self.domain_label)
+        return sample
 
     def _run_pipeline(
         self, lq_img: Optional[Image.Image], gt_img: Optional[Image.Image]
@@ -433,6 +437,7 @@ class PairedLmdbDataset(Dataset):
         self.opt = opt
         self.mode = opt.get("mode", "paired")  # paired | paired_aug | gt_only | lq_only
         self.loss_weight = float(opt.get("loss_weight", 1.0))
+        self.domain_label = opt.get("domain_label")
         if self.mode not in ("paired", "paired_aug", "gt_only", "lq_only"):
             raise ValueError("PairedLmdbDataset only supports mode: paired / paired_aug / gt_only / lq_only")
 
@@ -575,13 +580,16 @@ class PairedLmdbDataset(Dataset):
             gt_path = "generated_from_lq"
 
         lq, gt = self._run_pipeline(lq_img, gt_img)
-        return {
+        sample = {
             "lq": lq,
             "gt": gt,
             "lq_path": lq_path,
             "gt_path": gt_path,
             "loss_weight": self.loss_weight,
         }
+        if self.domain_label is not None:
+            sample["domain_label"] = int(self.domain_label)
+        return sample
 
     def _run_pipeline(
         self, lq_img: Optional[Image.Image], gt_img: Optional[Image.Image]
